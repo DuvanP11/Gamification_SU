@@ -1,6 +1,10 @@
 # piloto-score — Score Operacional de Pilotos (0.0–5.0)
 
 Motor local, parametrizable y auditable para puntuar pilotos en **B2B**, **Rent** y **B2C**.
+`SCORE = confianza ganada × (1 − penalizaciones)`: lo único que suma es experiencia,
+antigüedad y servicios sin novedad (un piloto recién activado arranca en 0.0); todo lo
+demás —antecedentes, cancelaciones, recaudo tarde, novedades en alto valor, reservas no
+asistidas, activación express, conducta inapropiada confirmada— sólo descuenta.
 La metodología completa (fórmulas, tratamiento de casos, ejemplos, riesgos) está en
 [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
 

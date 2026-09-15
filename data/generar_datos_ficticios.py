@@ -16,19 +16,19 @@ def oid(n):  # id estilo Mongo ObjectId, determinista
 def fecha_hace(dias): return (HOY - timedelta(days=dias)).isoformat()
 
 COLS = ["piloto_id","nombre","caso","tipo","driver_id","passenger_id","activado_piloto","activado_pasajero",
-        "calif_gamification","calif_app","dias_antiguedad","n_finalizados","n_cancel_piloto","n_cancel_pasajero",
+        "calif_gamification","calif_app","activacion_express","dias_antiguedad","n_finalizados","n_cancel_piloto","n_cancel_pasajero",
         "n_cancel_plataforma","n_otros_atribuibles","n_sin_novedad_a_tiempo","n_alto_valor","n_alto_valor_ok",
         "n_res_cumplidas","n_res_incumplidas_atrib","n_res_cancel_atrib","n_res_no_atrib"]
 
 # ── los 11 casos con nombre (idénticos a la v0.1, con las columnas nuevas) ──
 NOMBRADOS = [
  dict(piloto_id="P001",caso="buen comportamiento sostenido",nombre="Ana María Restrepo",tipo="B2B",dias_antiguedad=900,n_finalizados=180,n_cancel_piloto=3,n_cancel_pasajero=12,n_cancel_plataforma=1,n_sin_novedad_a_tiempo=172,n_alto_valor=25,n_alto_valor_ok=25,n_res_cumplidas=30,n_res_incumplidas_atrib=1,n_res_cancel_atrib=0,n_res_no_atrib=2),
- dict(piloto_id="P002",caso="piloto nuevo, pocos servicios",nombre="Bruno Cárdenas",tipo="RENT",dias_antiguedad=12,n_finalizados=6,n_cancel_piloto=1,n_cancel_pasajero=2),
+ dict(piloto_id="P002",caso="piloto nuevo (12 días), pocos servicios, activación express",nombre="Bruno Cárdenas",tipo="RENT",dias_antiguedad=12,activacion_express=1,n_finalizados=6,n_cancel_piloto=1,n_cancel_pasajero=2),
  dict(piloto_id="P003",caso="suspensión antigua + muchas finalizaciones",nombre="Carla Jiménez",tipo="RENT",dias_antiguedad=1500,n_finalizados=400,n_cancel_piloto=10,n_cancel_pasajero=60,n_cancel_plataforma=2),
  dict(piloto_id="P004",caso="comportamiento negativo reciente",nombre="Diego Salazar",tipo="B2C",dias_antiguedad=400,n_finalizados=40,n_cancel_piloto=9,n_cancel_pasajero=5,n_otros_atribuibles=1,n_sin_novedad_a_tiempo=30,n_alto_valor=8,n_alto_valor_ok=5),
  dict(piloto_id="P005",caso="alto valor con muchas novedades",nombre="Elena Quintero",tipo="B2B",dias_antiguedad=700,n_finalizados=90,n_cancel_piloto=2,n_cancel_pasajero=6,n_sin_novedad_a_tiempo=70,n_alto_valor=40,n_alto_valor_ok=28,n_res_cumplidas=10,n_res_incumplidas_atrib=4,n_res_cancel_atrib=0,n_res_no_atrib=1),
  dict(piloto_id="P006",caso="múltiples suspensiones + IMEI baneado",nombre="Fabián Ospina",tipo="RENT",dias_antiguedad=800,n_finalizados=120,n_cancel_piloto=20,n_cancel_pasajero=15,n_cancel_plataforma=1,n_otros_atribuibles=2),
- dict(piloto_id="P007",caso="cero servicios",nombre="Gloria Arango",tipo="B2C",dias_antiguedad=3),
+ dict(piloto_id="P007",caso="piloto nuevo (3 días) con cero servicios: arranca en 0.0",nombre="Gloria Arango",tipo="B2C",dias_antiguedad=3),
  dict(piloto_id="P008",caso="expulsión histórica (reintegrado)",nombre="Hugo Betancur",tipo="B2B",dias_antiguedad=1100,n_finalizados=50,n_cancel_piloto=6,n_cancel_pasajero=4,n_sin_novedad_a_tiempo=46,n_alto_valor=4,n_alto_valor_ok=4,n_res_cumplidas=8,n_res_incumplidas_atrib=0,n_res_cancel_atrib=1,n_res_no_atrib=0),
  dict(piloto_id="P009",caso="una sola cancelación",nombre="Iván Zapata",tipo="RENT",dias_antiguedad=600,n_finalizados=100,n_cancel_piloto=1,n_cancel_pasajero=10),
  dict(piloto_id="P010",caso="muchos servicios de alto valor bien atendidos",nombre="Julia Moreno",tipo="B2C",dias_antiguedad=950,n_finalizados=200,n_cancel_piloto=4,n_cancel_pasajero=9,n_sin_novedad_a_tiempo=195,n_alto_valor=60,n_alto_valor_ok=59),
@@ -60,6 +60,7 @@ def contexto(row, tipo):
     row["activado_piloto"] = fecha_hace(ant)
     row["calif_gamification"] = round(R.uniform(2.5, 5.0), 2)
     row["calif_app"] = round(R.uniform(3.5, 5.0), 2)
+    if "activacion_express" not in row: row["activacion_express"] = 1 if R.random() < 0.15 else 0
     return row
 
 filas = [contexto(dict(r), r["tipo"]) for r in NOMBRADOS]

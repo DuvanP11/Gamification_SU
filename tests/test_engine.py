@@ -91,8 +91,8 @@ class Casos(unittest.TestCase):
     def test_historial_limpio_no_suma(self):
         base = dict(n_finalizados=50, n_cancel_piloto=5, n_cancel_pasajero=30)
         limpio = ev(Metricas("A", "RENT", **base))
-        self.assertEqual(limpio["contribuciones"]["_bloques"]["P_antecedentes"], 0.0)
-        self.assertAlmostEqual(limpio["score_final"], round(limpio["contribuciones"]["_bloques"]["D_desempeno"], 1))
+        self.assertEqual(limpio["contribuciones"]["_bloques"]["P_penal"], 0.0)
+        self.assertAlmostEqual(limpio["score_final"], round(limpio["contribuciones"]["_bloques"]["D_base"], 1))
 
     def test_suspension_vieja_vs_reciente(self):
         base = dict(n_finalizados=200, n_cancel_piloto=4)
@@ -191,6 +191,52 @@ class Casos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BloquesV03(unittest.TestCase):
+    """v0.3: cancelar/recaudo/alto valor/reservas sólo descuentan; el piloto nuevo arranca en 0."""
+    def test_portarse_bien_no_suma(self):
+        base = dict(n_finalizados=100, n_cancel_piloto=0, n_sin_novedad_a_tiempo=100, dias_antiguedad=400)
+        a = ev(Metricas("A", "B2B", **base))
+        # con datos perfectos en las penalizaciones el score es EXACTAMENTE la base positiva
+        self.assertEqual(a["contribuciones"]["_bloques"]["P_penal"], 0.0)
+        self.assertEqual(a["score_final"], round(a["contribuciones"]["_bloques"]["D_base"], 1))
+        # y agregar reservas / recaudos / alto valor perfectos NO lo sube
+        from score.engine import Recaudo
+        b = ev(Metricas("B", "B2B", n_res_cumplidas=30, n_res_incumplidas_atrib=0, n_alto_valor=30, n_alto_valor_ok=30,
+                        recaudos=[Recaudo(datetime(2026, 9, 8, 9), datetime(2026, 9, 8, 12))], **base))
+        self.assertEqual(b["score_final"], a["score_final"])
+        for v in ("cancelacion_piloto", "cumplimiento_reservas", "alto_valor", "recaudo_24h"):
+            self.assertEqual(b["contribuciones"][v]["bloque"], "penalizacion"); self.assertEqual(b["contribuciones"][v]["descuento"], 0.0)
+
+    def test_penalizaciones_bajan(self):
+        from score.engine import Recaudo
+        base = dict(n_finalizados=100, n_sin_novedad_a_tiempo=100, dias_antiguedad=400)
+        ok = ev(Metricas("A", "B2B", n_cancel_piloto=0, **base))["score_final"]
+        self.assertLess(ev(Metricas("B", "B2B", n_cancel_piloto=90, **base))["score_final"], ok)                                   # cancela
+        self.assertLess(ev(Metricas("C", "B2B", n_res_cumplidas=5, n_res_incumplidas_atrib=10, **base))["score_final"], ok)        # no asiste a reservas
+        self.assertLess(ev(Metricas("D", "B2B", n_alto_valor=30, n_alto_valor_ok=10, **base))["score_final"], ok)                  # novedades en alto valor
+        self.assertLess(ev(Metricas("E", "B2B", recaudos=[Recaudo(datetime(2026, 9, 1, 9), datetime(2026, 9, 8, 9))], **base))["score_final"], ok)  # recaudo tarde
+
+    def test_piloto_nuevo_arranca_en_cero_y_sube(self):
+        nuevo0 = ev(Metricas("N0", "RENT", activado_piloto=date(2026, 9, 14)))
+        self.assertEqual(nuevo0["score_final"], 0.0); self.assertEqual(nuevo0["vigencia"], "PROVISIONAL")
+        self.assertTrue(any("NUEVO" in o for o in nuevo0["observaciones"]))
+        n1 = ev(Metricas("N1", "RENT", activado_piloto=date(2026, 9, 5), n_finalizados=8, n_cancel_piloto=0))
+        n2 = ev(Metricas("N2", "RENT", activado_piloto=date(2026, 8, 20), n_finalizados=40, n_cancel_piloto=0))
+        vet = ev(Metricas("V", "RENT", activado_piloto=date(2024, 1, 1), n_finalizados=200, n_cancel_piloto=0))
+        self.assertGreater(n1["score_final"], 0.0); self.assertGreater(n2["score_final"], n1["score_final"]); self.assertGreater(vet["score_final"], n2["score_final"])
+        # veterano sin servicios en la ventana: inactivo, no 0.0
+        self.assertIsNone(ev(Metricas("I", "RENT", activado_piloto=date(2024, 1, 1)))["score_final"])
+
+    def test_activacion_express_penaliza_y_se_apaga(self):
+        base = dict(n_finalizados=60, n_cancel_piloto=0)
+        normal = ev(Metricas("A", "RENT", activado_piloto=date(2026, 9, 1), activacion_express=0, **base))
+        express = ev(Metricas("B", "RENT", activado_piloto=date(2026, 9, 1), activacion_express=1, **base))
+        vieja = ev(Metricas("C", "RENT", activado_piloto=date(2024, 9, 1), activacion_express=1, **base))
+        self.assertLess(express["score_final"], normal["score_final"])
+        self.assertGreater(express["contribuciones"]["activacion_express"]["descuento"], vieja["contribuciones"]["activacion_express"]["descuento"])
+        self.assertTrue(any("EXPRESS" in o for o in express["observaciones"]))
 
 
 class DocumentosTest(unittest.TestCase):

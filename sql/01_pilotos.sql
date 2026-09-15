@@ -37,10 +37,18 @@ WITH
            argMax(ifNull(last_name, ''), _sdc_batched_at) AS ape,
            argMax(created_at,            _sdc_batched_at) AS creado,
            argMax(enrollment_approval_at, _sdc_batched_at) AS aprobado,
-           argMax(rating_as_driver__fl,  _sdc_batched_at) AS rating_drv
+           argMax(rating_as_driver__fl,  _sdc_batched_at) AS rating_drv,
+           argMax(ifNull(express_activation_for_passenger, 0), _sdc_batched_at) AS express_pas
     FROM picapmongoprod.passengers
     WHERE _id IN (SELECT piloto_id FROM agg)
     GROUP BY _id),
+  -- Activación express: flag en passengers y/o algún formulario de enrolamiento express
+  -- (SUPUESTO: ambas marcas significan "entró con menos validación"; confirmar cuál manda).
+  exp_form AS (
+    SELECT toString(passenger_id) AS pid, max(toUInt8(ifNull(express_activation, false))) AS express
+    FROM picapmongoprod.driver_enrollment_document_forms
+    WHERE passenger_id IN (SELECT piloto_id FROM agg)
+    GROUP BY pid),
   gam AS (
     SELECT driver_id AS gid, final_score, total_score_points, new_final_score_pibox, new_final_score_rent
     FROM picapmongoprod.vw_atr_driver_scoring_with_frauds
@@ -58,6 +66,7 @@ SELECT
   if(g.gid IS NULL OR g.gid = '', NULL, g.total_score_points)        AS gamif_puntos,
   if(g.gid IS NULL OR g.gid = '', NULL, g.final_score)               AS gamif_final,
   toFloat64OrNull(p.rating_drv)                                      AS calif_app,
+  greatest(toUInt8(p.express_pas), toUInt8(ifNull(e.express, 0)))    AS activacion_express,
   dateDiff('day', toDate(p.creado), today())                         AS dias_antiguedad,
   a.n_finalizados, a.n_cancel_piloto, a.n_cancel_pasajero, a.n_cancel_plataforma,
   0 AS n_otros_atribuibles,
@@ -66,5 +75,6 @@ SELECT
 FROM agg a
 LEFT JOIN pas p ON p._id = a.piloto_id
 LEFT JOIN gam g ON g.gid = a.piloto_id
+LEFT JOIN exp_form e ON e.pid = a.piloto_id
 ORDER BY a.tipo, a.n_finalizados DESC
 FORMAT CSVWithNames

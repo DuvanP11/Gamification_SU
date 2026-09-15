@@ -126,7 +126,8 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
                   "activado_piloto": _fecha_opc(r.get("activado_piloto")),
                   "activado_pasajero": _fecha_opc(r.get("activado_pasajero")),
                   "calif_gamification": _float(r.get("calif_gamification")), "calif_app": _float(r.get("calif_app")),
-                  "gamif_puntos": _float(r.get("gamif_puntos")), "gamif_final": _float(r.get("gamif_final"))}
+                  "gamif_puntos": _float(r.get("gamif_puntos")), "gamif_final": _float(r.get("gamif_final")),
+                  "activacion_express": _int(r.get("activacion_express"))}
             for c in CAMPOS_INT:
                 v = _int(r.get(c))
                 if v is None and c in CAMPOS_CERO_POR_DEFECTO:

@@ -20,6 +20,16 @@ TIPOS = ("B2B", "RENT", "B2C")
 EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
            "invitacion_rent", "expulsion", "baneo_imei", "conducta_inapropiada")
 
+# Bloques del modelo (v0.3, 2026-09-15):
+#   POSITIVAS      → suman: la confianza que el piloto se GANA (experiencia, antigüedad,
+#                    servicios sin novedad). Un piloto nuevo arranca en 0.
+#   PENALIZACIONES → sólo descuentan: antecedentes + conductas operativas malas
+#                    (cancelar, pagar tarde el recaudo, novedades en alto valor,
+#                    no asistir a reservas, activación express). Portarse bien =
+#                    descuento 0, nunca puntos.
+POSITIVAS = ("finalizados", "antiguedad", "sin_novedades")
+PENALIZACIONES = EVENTOS + ("activacion_express", "cancelacion_piloto", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
+
 
 # ────────────────────────────── primitivas ──────────────────────────────
 def clip(x: float, lo: float, hi: float) -> float:
@@ -143,6 +153,7 @@ class Metricas:
     gamif_puntos: float | None = None         # gamification: total_score_points
     gamif_final: float | None = None          # gamification: final_score
     calif_app: float | None = None            # calificación en la app (passengers.rating_as_driver__fl)
+    activacion_express: int | None = None     # 1 = activado por la vía express (menos validación)
     dias_antiguedad: int | None = None
     n_finalizados: int = 0
     n_cancel_piloto: int = 0
@@ -223,6 +234,37 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
                                             "carga": round(carga, 3), "tope": cfg["tope"],
                                             "edades_dias": edades}}
 
+    # 1b) Antigüedad como piloto (positiva, saturante): un piloto recién activado
+    #     vale 0 acá y va subiendo hasta dias_ref. Es la "desconfianza inicial".
+    var = "antiguedad"
+    dias_p = (hoy - m.activado_piloto).days if m.activado_piloto else m.dias_antiguedad
+    if m.tipo not in aplica.get(var, []):
+        no(var, "no_aplica")
+    elif dias_p is None:
+        no(var, "sin_dato")
+    else:
+        dias_p = max(0, dias_p)
+        ref = _p(params, "volumen", "antiguedad", "dias_ref", tipo=m.tipo)
+        out[var] = {"score": smax * clip(dias_p / ref, 0.0, 1.0),
+                    "detalle": {"dias": dias_p, "dias_ref": ref,
+                                "desde": (m.activado_piloto.isoformat() if m.activado_piloto else "registro")}}
+
+    # 1c) Activación express (penalización): entró con menos validación. Descuenta
+    #     completo el día de la activación y se apaga con semivida (ya demostró).
+    var = "activacion_express"
+    if m.tipo not in aplica.get(var, []):
+        no(var, "no_aplica")
+    elif m.activacion_express is None:
+        no(var, "sin_dato")
+    elif not m.activacion_express:
+        out[var] = {"score": smax, "detalle": {"express": 0}}
+    else:
+        cfg = params["eventos"][var]
+        edad = max(0, dias_p or 0)
+        carga = decaimiento(edad, cfg["semivida_dias"])
+        out[var] = {"score": sub_score_evento(carga, cfg["tope"], smax),
+                    "detalle": {"express": 1, "dias_desde_activacion": edad, "carga": round(carga, 3), "tope": cfg["tope"]}}
+
     # 2) Cancelación propia (tasa, menos es mejor)
     var = "cancelacion_piloto"
     if m.tipo not in aplica[var]:
@@ -276,7 +318,9 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         prop = n_av / m.n_finalizados
         expo = math.sqrt(clip(n_av / _c(c, "n_ref", m.tipo), 0, 1) * clip(prop / _c(c, "prop_ref", m.tipo), 0, 1))
         adj = tasa_ajustada(ok, n_av, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
-        s_neutro = rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
+        # Penalización pura: sin novedades en alto valor = 5 (descuento 0); con
+        # novedades baja en proporción a la exposición (pocos servicios caros ≈ nada).
+        s_neutro = smax
         s_desemp = rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s = s_neutro + expo * (s_desemp - s_neutro)
         out[var] = {"score": s, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
@@ -341,17 +385,26 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
 
 
 # ────────────────────────────── agregación ──────────────────────────────
-def validar_pesos(pesos_tipo: dict[str, float], max_participacion: float) -> list[str]:
+def validar_pesos(pesos_tipo: dict[str, float], max_participacion) -> list[str]:
+    """max_participacion: escalar o {positivas: x, penalizaciones: y}. Se valida
+    dentro de cada bloque, que es donde la proporción manda."""
     avisos = []
-    total = sum(v for v in pesos_tipo.values() if v)
-    if total <= 0:
-        avisos.append("la suma de pesos es 0")
-        return avisos
-    for k, v in pesos_tipo.items():
-        if v < 0:
-            avisos.append(f"peso negativo en {k}")
-        elif v / total > max_participacion:
-            avisos.append(f"{k} concentra {v/total:.0%} > {max_participacion:.0%} permitido")
+    if not isinstance(max_participacion, dict):
+        max_participacion = {"positivas": max_participacion, "penalizaciones": max_participacion}
+    for nombre, vars_ in (("positivas", POSITIVAS), ("penalizaciones", PENALIZACIONES)):
+        tot = sum((pesos_tipo.get(v) or 0) for v in vars_)
+        if tot <= 0:
+            avisos.append(f"la suma de pesos de {nombre} es 0"); continue
+        lim = max_participacion.get(nombre, 1.0)
+        for v in vars_:
+            w = pesos_tipo.get(v) or 0
+            if w < 0:
+                avisos.append(f"peso negativo en {v}")
+            elif w / tot > lim + 1e-9:
+                avisos.append(f"{v} concentra {w/tot:.0%} de {nombre} > {lim:.0%} permitido")
+    for k in pesos_tipo:
+        if k not in POSITIVAS and k not in PENALIZACIONES:
+            avisos.append(f"peso desconocido: {k}")
     return avisos
 
 
@@ -371,34 +424,33 @@ def _promedio_ponderado(subs: dict[str, dict], pesos_tipo: dict[str, float], var
 def score_comportamental(subs: dict[str, dict], pesos_tipo: dict[str, float],
                          alpha: float = 1.0, score_max: float = 5.0) -> tuple[float | None, dict]:
     """Dos bloques:
-      D = Σ w·s / Σ w   sobre las variables de DESEMPEÑO con dato (renormaliza).
-      P = Σ w_e·(1 − s_e/5) / Σ w_e   sobre las variables de ANTECEDENTES (0 = limpio, 1 = todo al tope).
+      D = Σ w·s / Σ w   sobre las variables POSITIVAS con dato (confianza ganada).
+      P = Σ w_v·(1 − s_v/5) / Σ w_v   sobre las PENALIZACIONES aplicables (0 = nada que descontar).
       SCORE = D · (1 − α·P)
-    Un historial limpio NO suma puntos (P=0 → SCORE=D); uno cargado descuenta
-    como máximo α·(w_e/Σw_e) por variable, así ninguna domina sola.
-    Si no hay ninguna variable de desempeño con dato → None (sin evidencia)."""
-    desemp = tuple(v for v in subs if v not in EVENTOS)
-    D, den_d = _promedio_ponderado(subs, pesos_tipo, desemp)
+    Portarse bien en una penalización vale descuento 0, nunca suma puntos; cada
+    penalización descuenta como máximo α·(w_v/Σw) → ninguna domina sola.
+    Sin ninguna positiva con dato → None (sin evidencia)."""
+    D, den_d = _promedio_ponderado(subs, pesos_tipo, POSITIVAS)
     if D is None:
         return None, {}
     contrib = {}
-    for var in desemp:
-        r = subs[var]; w = pesos_tipo.get(var, 0) or 0
-        if r.get("score") is not None and w > 0:
-            contrib[var] = {"bloque": "desempeno", "peso_efectivo": w / den_d, "aporte": w / den_d * r["score"]}
+    for var in POSITIVAS:
+        r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
+        if r and r.get("score") is not None and w > 0:
+            contrib[var] = {"bloque": "positiva", "peso_efectivo": w / den_d, "aporte": w / den_d * r["score"]}
     num_p = den_p = 0.0
-    for var in EVENTOS:
+    for var in PENALIZACIONES:
         r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
         if not r or r.get("score") is None or w <= 0:
             continue
         num_p += w * (1.0 - r["score"] / score_max); den_p += w
     P = (num_p / den_p) if den_p else 0.0
-    for var in EVENTOS:
+    for var in PENALIZACIONES:
         r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
         if r and r.get("score") is not None and w > 0:
-            contrib[var] = {"bloque": "antecedentes", "peso_efectivo": w / den_p,
+            contrib[var] = {"bloque": "penalizacion", "peso_efectivo": w / den_p,
                             "descuento": alpha * w / den_p * (1.0 - r["score"] / score_max)}
-    contrib["_bloques"] = {"D_desempeno": D, "P_antecedentes": P, "factor": 1.0 - alpha * P, "alpha": alpha}
+    contrib["_bloques"] = {"D_base": D, "P_penal": P, "factor": 1.0 - alpha * P, "alpha": alpha}
     return D * (1.0 - alpha * P), contrib
 
 
@@ -444,6 +496,11 @@ def observaciones(m: Metricas, subs: dict, vigencia: str, n_min: int, restriccio
                  "invitacion_rent": ("Invitación Rent", "invitaciones Rent"),
                  "expulsion": ("Expulsión", "expulsiones"), "baneo_imei": ("Baneo de IMEI", "baneos de IMEI"),
                  "conducta_inapropiada": ("Conducta inapropiada confirmada", "casos de conducta inapropiada confirmados")}
+    dias_p = ((subs.get("antiguedad") or {}).get("detalle") or {}).get("dias")
+    if dias_p is not None and dias_p < int(params["general"].get("dias_nuevo", 30)):
+        obs.append(f"Piloto NUEVO: activado hace {dias_p} días — arranca en 0.0 y sube con lo que haga")
+    if ((subs.get("activacion_express") or {}).get("detalle") or {}).get("express"):
+        obs.append("Activado por la vía EXPRESS (menos validación al entrar)")
     if vigencia == "PROVISIONAL":
         obs.append(f"Piloto con pocos servicios en la ventana: {m.n_aplicables} de {n_min} necesarios (score provisional)")
     for r in restricciones:
@@ -546,9 +603,16 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
     n = m.n_aplicables
     confianza = clip(n / n_min, 0.0, 1.0) if n_min else 1.0
 
-    # Sin ninguna variable de desempeño con dato (típicamente 0 servicios) no hay
-    # evidencia sobre la que descontar antecedentes → sin score.
-    sc, contrib = score_comportamental(subs, pesos_tipo, g.get("alpha_antecedentes", 1.0), g["score_max"])
+    # Piloto NUEVO (activado hace < dias_nuevo) sin servicios: arranca en 0.0 y sube
+    # con lo que haga. Veterano sin servicios en la ventana: inactivo → sin score.
+    dias_p = (hoy - m.activado_piloto).days if m.activado_piloto else m.dias_antiguedad
+    es_nuevo = dias_p is not None and dias_p < int(g.get("dias_nuevo", 30))
+    if n == 0 and not es_nuevo:
+        sc, contrib = None, {}
+    else:
+        sc, contrib = score_comportamental(subs, pesos_tipo, g.get("alpha_antecedentes", 1.0), g["score_max"])
+        if n == 0 and sc is not None:
+            sc = 0.0; contrib["_bloques"] = {**contrib.get("_bloques", {}), "D_base": 0.0, "nota": "nuevo sin servicios"}
 
     reg = aplicar_reglas(sc, m.reglas_activas, reglas.get("reglas", {}))
     docs = evaluar_documentos(m.documentos, params, hoy) if m.tipo in (params.get("documentos") or {}).get("aplica_a", TIPOS) else evaluar_documentos(None, params, hoy)

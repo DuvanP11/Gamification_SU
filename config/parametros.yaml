@@ -10,12 +10,16 @@ general:
   # Mínimo de servicios aplicables (finalizados + atribuibles) en la ventana
   # para que el score sea DEFINITIVO. Debajo se publica como PROVISIONAL.
   n_min_definitivo: { B2B: 20, RENT: 20, B2C: 20 }
-  # Ninguna variable puede concentrar más de esta fracción del peso total
-  # (se valida al cargar pesos.yaml, evita resultados desproporcionados).
-  max_participacion_peso: 0.35
-  # Intensidad máxima del bloque de antecedentes: SCORE = D · (1 − alpha·P).
-  # alpha = 1.0 → un historial "todo al tope" deja el score en 0; 0.5 → lo
-  # reduce como mucho a la mitad. Los pesos de eventos son relativos entre sí.
+  # Ninguna variable puede concentrar más de esta fracción del peso de SU bloque
+  # (se valida al cargar pesos.yaml, evita resultados desproporcionados). El bloque
+  # positivo tiene pocas variables (2–3), por eso su límite es más alto.
+  max_participacion_peso: { positivas: 0.60, penalizaciones: 0.35 }
+  # Piloto NUEVO: activado hace menos de estos días. Sin servicios arranca en 0.0
+  # (un veterano sin servicios en la ventana, en cambio, queda SIN_SCORE: inactivo).
+  dias_nuevo: 30
+  # Intensidad máxima del bloque de PENALIZACIONES: SCORE = D · (1 − alpha·P).
+  # alpha = 1.0 → todas las penalizaciones al tope dejan el score en 0; 0.5 → lo
+  # reducen como mucho a la mitad. Los pesos de penalizaciones son relativos entre sí.
   alpha_antecedentes: 1.0
   # Ventana (días) de las TASAS operativas. Los eventos usan semivida, no ventana.
   ventana_tasas_dias: 90
@@ -55,6 +59,9 @@ eventos:
   # hacen falta cinco casos confirmados recientes para que esta variable llegue a 0;
   # un caso de hoy descuenta ~1/5 de su peso. severidad_por_subtipo permite pesar
   # distinto el lenguaje abusivo y el acoso sexual (hoy igual, a definir con Riesgo).
+  # Activación EXPRESS (menos validación al entrar): descuenta completo el día de
+  # la activación y se apaga con la semivida — el piloto "demuestra" con el tiempo.
+  activacion_express: { semivida_dias: 120, tope: 1.0, severidad: 1.0, activo_restringe: false }
   conducta_inapropiada:
     semivida_dias: 180
     tope: 5.0
@@ -66,6 +73,9 @@ eventos:
 # VARIABLES DE TASA. tasa_ajustada = (x + m·p0) / (n + m)   (suavizado bayesiano)
 # sub_score = rampa(tasa_ajustada, x_score0, x_score5): lineal entre los dos
 # puntos, recortada a [0,5]. Si x_score0 > x_score5 la variable es "menos es mejor".
+# ⚠️ Desde v0.3 cancelación, recaudo, alto valor y reservas son PENALIZACIONES:
+# sub_score 5 = nada que descontar (x_score5 es el umbral donde EMPIEZA el
+# descuento) y sub_score 0 = descuento completo de su peso. Nunca suman puntos.
 #   p0 : tasa de referencia poblacional (CALIBRAR con datos reales).
 #   m  : pseudo-observaciones (fuerza del prior). Con n = m el dato del piloto
 #        pesa lo mismo que la referencia.
@@ -87,6 +97,9 @@ tasas:
     m: 10
     x_score0: 0.60
     x_score5: 0.97
+  # ⚠️ En las penalizaciones x_score5 (donde EMPIEZA el descuento) = p0: así un piloto
+  # con poca evidencia (el prior lo deja en p0) no recibe descuento por lo que no hizo.
+  # La excepción es cancelacion_piloto, calibrada más estricta (p20) a propósito.
   recaudo_24h:
     # "24 hrs a excepción de un FDS": de cada recaudo contra entrega que el piloto
     # NO abonó en el momento, ¿lo pagó dentro de limite_horas HÁBILES? (sábado y
@@ -98,20 +111,20 @@ tasas:
     pendiente_alerta: true
     p0: 0.85
     m: 5
-    x_score0: 0.40      # ≤40 % pagados a tiempo → 0
-    x_score5: 0.95      # ≥95 % → 5
+    x_score0: 0.40      # ≤40 % pagados a tiempo → descuento completo
+    x_score5: 0.85      # ≥85 % (la referencia) → sin descuento
   cumplimiento_reservas:
     p0: 0.90
     m: 5
     x_score0: 0.60
-    x_score5: 0.97
+    x_score5: 0.90
   alto_valor:
     # Un servicio es "alto valor" si valor_declarado ≥ umbral (por tipo).
     umbral_valor: { B2B: 500000, B2C: 300000 }
     p0: 0.90          # cumplimiento de referencia en servicios de alto valor
     m: 5
     x_score0: 0.60
-    x_score5: 0.97
+    x_score5: 0.90
     # Exposición = media geométrica de min(1, n_av/n_ref) y min(1, prop_av/prop_ref).
     # El sub-score se mueve desde el neutro (rampa(p0)) hacia rampa(cumplimiento)
     # en proporción a la exposición: pocos servicios caros ≈ sin efecto.
@@ -124,6 +137,9 @@ tasas:
 volumen:
   # n_ref = p95 de finalizados en 90 días (calibrado 2026-09-15): a partir de ahí ya no suma.
   finalizados: { n_ref: { B2B: 125, RENT: 170, B2C: 150 } }
+  # Antigüedad como piloto (desde enrollment_approval_at): sube linealmente hasta
+  # dias_ref y ahí satura. Un recién activado vale 0 acá.
+  antiguedad:  { dias_ref: 90 }
 
 # ---------------------------------------------------------------------------
 # DOCUMENTOS / HABILITACIÓN (RUNT, Policía, SOAT, tecnomecánica). NO dan puntos:
@@ -151,9 +167,14 @@ aplicabilidad:
   expulsion:             [B2B, RENT, B2C]
   baneo_imei:            [RENT]
   conducta_inapropiada:  [B2B, RENT, B2C]
+  # ⚠️ En las penalizaciones x_score5 (donde EMPIEZA el descuento) = p0: así un piloto
+  # con poca evidencia (el prior lo deja en p0) no recibe descuento por lo que no hizo.
+  # La excepción es cancelacion_piloto, calibrada más estricta (p20) a propósito.
   recaudo_24h:           [B2B]
   cancelacion_piloto:    [B2B, RENT, B2C]
   finalizados:           [B2B, RENT, B2C]
+  antiguedad:            [B2B, RENT, B2C]
+  activacion_express:    [B2B, RENT, B2C]
   alto_valor:            [B2B, B2C]
   sin_novedades:         [B2B, B2C]
   cumplimiento_reservas: [B2B]

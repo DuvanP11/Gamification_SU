@@ -83,8 +83,8 @@ def explicar(r: dict):
     if r["alertas"]: print(f"reglas: {', '.join(r['alertas'])}" + (f"  → tope {r['tope_por_regla']}" if r["tope_por_regla"] is not None else ""))
     b = r["contribuciones"].get("_bloques")
     if b:
-        print(f"D (desempeño) = {b['D_desempeno']:.3f}   P (antecedentes) = {b['P_antecedentes']:.3f}   "
-              f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}   →  D·factor = {b['D_desempeno']*b['factor']:.3f}")
+        print(f"D (confianza ganada) = {b['D_base']:.3f}   P (penalizaciones) = {b['P_penal']:.3f}   "
+              f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}   →  D·factor = {b['D_base']*b['factor']:.3f}")
     print(f"\n{'variable':24} {'bloque':13} {'sub':>6} {'peso ef.':>9} {'aporte/desc.':>12}  detalle")
     for var, s in r["sub_scores"].items():
         c = r["contribuciones"].get(var)
@@ -94,5 +94,5 @@ def explicar(r: dict):
         if not c:
             print(f"{var:24} {'(peso 0)':13} {s['score']:>6.2f} {'0%':>9} {'0':>12}  {det}"); continue
         pe = f"{c['peso_efectivo']:.1%}"
-        ap = f"+{c['aporte']:.2f}" if c["bloque"] == "desempeno" else f"−{c['descuento']:.1%}"
+        ap = f"+{c['aporte']:.2f}" if c["bloque"] == "positiva" else f"−{c['descuento']:.1%}"
         print(f"{var:24} {c['bloque']:13} {s['score']:>6.2f} {pe:>9} {ap:>12}  {det}")

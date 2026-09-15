@@ -3,7 +3,9 @@
 # Independientes de la metodología: cambiar acá NO cambia cómo se mide nada.
 # Se renormalizan sobre las variables que apliquen y tengan dato, así que la
 # suma no tiene que ser 100; se usa 100 sólo para leerlos como porcentaje.
-# Regla: ninguna variable > max_participacion_peso (parametros.yaml).
+# Bloques: POSITIVAS (finalizados, antiguedad, sin_novedades) suman; el resto son
+# PENALIZACIONES y sólo descuentan. Los pesos son relativos DENTRO de su bloque.
+# Regla: ninguna variable > max_participacion_peso de su bloque (parametros.yaml).
 # ============================================================================
 B2B:
   suspension_piloto:     15
@@ -14,9 +16,11 @@ B2B:
   conducta_inapropiada:  8
   recaudo_24h:           8
   cancelacion_piloto:    15
-  finalizados:           7
+  finalizados:           14
+  antiguedad:            12
+  sin_novedades:         14
+  activacion_express:    6
   alto_valor:            10
-  sin_novedades:         12
   cumplimiento_reservas: 8
 RENT:
   suspension_piloto:     18
@@ -28,6 +32,8 @@ RENT:
   conducta_inapropiada:  8
   cancelacion_piloto:    25
   finalizados:           15
+  antiguedad:            10
+  activacion_express:    6
 B2C:
   suspension_piloto:     15
   suspension_pasajero:   6
@@ -36,6 +42,8 @@ B2C:
   expulsion:             12
   conducta_inapropiada:  8
   cancelacion_piloto:    18
-  finalizados:           10
-  alto_valor:            12
+  finalizados:           14
+  antiguedad:            12
   sin_novedades:         14
+  activacion_express:    6
+  alto_valor:            12

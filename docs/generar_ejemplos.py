@@ -16,12 +16,12 @@ print("|---|---|---|---:|---:|---:|---:|---|---|---|---|")
 for r in res:
     b = r["contribuciones"].get("_bloques") or {}
     est = r["estado"] + (" [" + ",".join(r["restricciones_activas"]) + "]" if r["restricciones_activas"] else "") + (" ⚠ " + ", ".join(r["alertas"]) if r["alertas"] else "")
-    print(f"| {r['piloto_id']} | {r['tipo']} | {r['caso']} | {f(b.get('D_desempeno'))} | {'—' if not b else f'{b['P_antecedentes']:.0%}'} | {f(r['score_comportamental'])} | **{f(r['score_final'])}** | {r['banda'] or 'SIN SCORE'} | {r['vigencia']} ({r['confianza']}) | {est} | {'; '.join(r['observaciones']) or '—'} |")
+    print(f"| {r['piloto_id']} | {r['tipo']} | {r['caso']} | {f(b.get('D_base'))} | {'—' if not b else f'{b['P_penal']:.0%}'} | {f(r['score_comportamental'])} | **{f(r['score_final'])}** | {r['banda'] or 'SIN SCORE'} | {r['vigencia']} ({r['confianza']}) | {est} | {'; '.join(r['observaciones']) or '—'} |")
 
 def desglose(pid):
     r = [x for x in res if x["piloto_id"] == pid][0]; b = r["contribuciones"]["_bloques"]
-    print(f"\n**{pid} · {r['nombre']} ({r['caso']}) · {r['tipo']}** — D = {b['D_desempeno']:.3f}, P = {b['P_antecedentes']:.3f}, "
-          f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}, score = {b['D_desempeno']*b['factor']:.2f} → **{r['score_final']}** "
+    print(f"\n**{pid} · {r['nombre']} ({r['caso']}) · {r['tipo']}** — D = {b['D_base']:.3f}, P = {b['P_penal']:.3f}, "
+          f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}, score = {b['D_base']*b['factor']:.2f} → **{r['score_final']}** "
           f"({r['banda']}, {r['vigencia']}, estado {r['estado']}"
           + (f", tope por regla {r['tope_por_regla']}" if r['tope_por_regla'] is not None else "") + ")\n")
     print("| Variable | Bloque | Sub-score | Peso efectivo | Aporte / descuento | Cálculo |")
@@ -31,7 +31,7 @@ def desglose(pid):
         if s["score"] is None:
             print(f"| {v} | — | — | — | — | *{s['motivo']}* |"); continue
         det = ", ".join(f"{k}={val}" for k, val in s["detalle"].items() if k != "edades_dias")
-        ap = f"+{c['aporte']:.2f}" if c["bloque"] == "desempeno" else f"−{c['descuento']:.1%}"
+        ap = f"+{c['aporte']:.2f}" if c["bloque"] == "positiva" else f"−{c['descuento']:.1%}"
         print(f"| {v} | {c['bloque']} | {s['score']:.2f} | {c['peso_efectivo']:.1%} | {ap} | {det} |")
 
 for pid in sys.argv[1:] or ["P005", "P006", "P004"]:
