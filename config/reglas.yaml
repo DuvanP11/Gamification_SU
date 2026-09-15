@@ -1,0 +1,29 @@
+# ============================================================================
+# REGLAS EXISTENTES → capa de riesgo. NO suman ni restan puntos.
+# efecto:
+#   bloqueo : el resultado final es BLOQUEADO (el score se calcula y se muestra,
+#             pero no habilita nada).
+#   tope    : el score final no puede superar `tope` mientras la regla esté viva.
+#   alerta  : sólo se lista junto al score (para conductas que el score YA mide
+#             — evita la doble penalización).
+# `mide_score`: qué variable del score cubre la misma conducta. Si está, el
+# efecto NO debería ser tope/bloqueo por la misma evidencia, salvo decisión
+# expresa de Riesgo (se documenta en `justificacion`).
+# Los nombres son EJEMPLOS del formato: reemplazar por el catálogo real.
+# ============================================================================
+reglas:
+  imei_compartido:
+    efecto: bloqueo
+    descripcion: "Mismo IMEI en varias cuentas (RF + IMEI)"
+  cuenta_nueva_retiro_alto:
+    efecto: tope
+    tope: 2.5
+    descripcion: "Cuenta < 30 días con retiro alto (regla Cash Out)"
+  cancelaciones_en_racha:
+    efecto: alerta
+    mide_score: cancelacion_piloto
+    descripcion: "≥3 cancelaciones en 24 h — el score ya lo castiga vía tasa"
+  fake_gps:
+    efecto: tope
+    tope: 1.5
+    descripcion: "Mala praxis GPS detectada por reglas de Monitoreo"

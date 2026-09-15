@@ -1,0 +1,103 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Afinador · Score de Pilotos</title>
+<style>
+:root{--bg:#f6f6f8;--card:#fff;--text:#1a1a1f;--muted:#6b6b76;--border:#e3e3ea;--acc:#5b3df5;--ok:#16a34a;--bad:#dc2626;--warn:#b45309}
+body{margin:0;font:13px/1.45 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header{padding:12px 20px;background:#2d1f7a;color:#fff;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:16px;margin:0}header select,header input,header button{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid #fff5}
+main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px;max-width:1500px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.w{display:grid;grid-template-columns:150px 1fr 38px;gap:8px;align-items:center;margin:3px 0;font-size:12px}
+.w input[type=range]{width:100%}.w b{text-align:right;font-variant-numeric:tabular-nums}
+.w.ev{color:#7a1f1f}.w.ev b{color:#7a1f1f}
+table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;font-size:12px;white-space:nowrap}
+th{color:var(--muted);font-weight:600;cursor:pointer}tbody tr{cursor:pointer}tbody tr:hover{background:#f0edff}tbody tr.sel{background:#e6e0ff}
+.num{text-align:right;font-variant-numeric:tabular-nums}.pill{padding:2px 7px;border-radius:6px;font-weight:700;font-size:11px;color:#fff}
+.b-EXCELENTE{background:#15803d}.b-BUENO{background:#65a30d}.b-ACEPTABLE{background:#ca8a04}.b-DEFICIENTE{background:#ea580c}.b-CRITICO{background:#dc2626}.b-EXTREMADAMENTE_CRITICO{background:#7f1d1d}.b-null{background:#9ca3af}
+.est-BLOQUEADO,.est-RESTRINGIDO{color:var(--bad);font-weight:700}.est-SIN_SCORE{color:var(--muted)}
+textarea{width:100%;height:320px;font:11px/1.35 ui-monospace,Menlo,monospace;border:1px solid var(--border);border-radius:6px;padding:8px;box-sizing:border-box}
+button.p{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}button.s{background:#eee;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+#detalle table td:nth-child(3),#detalle table td:nth-child(4),#detalle table td:nth-child(5){text-align:right}
+.aviso{color:var(--warn);font-size:12px;margin-top:6px}.err{color:var(--bad)}
+.bloques{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:12px}.bloques div{background:#f3f0ff;border-radius:8px;padding:6px 10px}
+small{color:var(--muted)}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Afinador · Score de Pilotos</h1>
+ <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
+ <label>Fecha de corte <input id="hoy" type="date"></label>
+ <button class="p" id="guardarPesos">Guardar pesos.yaml</button>
+ <button class="s" id="guardarParams">Guardar parametros.yaml</button>
+ <span id="msg" style="font-size:12px"></span></header>
+<main>
+ <div>
+  <div class="card"><h2>Pesos <small id="tipoPesos"></small></h2><div id="pesos"></div>
+   <div class="w" style="margin-top:8px"><span>α antecedentes</span><input type="range" id="alpha" min="0" max="1" step="0.05"><b id="alphaV"></b></div>
+   <div id="avisos" class="aviso"></div></div>
+  <div class="card" style="margin-top:12px"><h2>Parámetros (YAML, se aplica al recalcular)</h2><textarea id="params"></textarea>
+   <div style="margin-top:6px"><button class="p" id="recalc">Recalcular</button> <small>los sliders recalculan solos</small></div></div>
+ </div>
+ <div>
+  <div class="card"><h2>Ranking</h2><table><thead><tr><th>Piloto</th><th>Tipo</th><th class="num">D</th><th class="num">P</th><th class="num">Score</th><th class="num">Final</th><th>Banda</th><th>Vigencia</th><th class="num">n</th><th>Estado / alertas</th></tr></thead><tbody id="tabla"></tbody></table></div>
+  <div class="card" style="margin-top:12px" id="detalle"><h2>Desglose</h2><small>Clic en un piloto.</small></div>
+ </div>
+</main>
+<script>
+var CFG=null, PESOS=null, RES=[], SEL=null, VARS=[];
+var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','bloqueo_24h'];
+function $(id){return document.getElementById(id)}
+async function init(){
+  CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
+  var a=CFG.parametros.general.alpha_antecedentes; if(a===undefined)a=1; $('alpha').value=a; $('alphaV').textContent=a;
+  renderPesos(); recalc();
+}
+function tipoSel(){return $('tipo').value||'B2B'}
+function renderPesos(){
+  var t=tipoSel(), apl=CFG.parametros.aplicabilidad, cont=$('pesos'); cont.innerHTML=''; $('tipoPesos').textContent='('+t+')';
+  VARS=Object.keys(apl).filter(function(v){return apl[v].indexOf(t)>=0});
+  VARS.forEach(function(v){ if(PESOS[t][v]===undefined)PESOS[t][v]=0;
+    var d=document.createElement('div'); d.className='w'+(EVENTOS.indexOf(v)>=0?' ev':'');
+    d.innerHTML='<span title="'+(EVENTOS.indexOf(v)>=0?'antecedente (descuenta)':'desempeño (suma)')+'">'+v+'</span><input type="range" min="0" max="40" step="1" value="'+PESOS[t][v]+'"><b>'+PESOS[t][v]+'</b>';
+    var r=d.querySelector('input'), b=d.querySelector('b');
+    r.oninput=function(){PESOS[t][v]=+r.value;b.textContent=r.value;recalcDebounced()}; cont.appendChild(d); });
+}
+var tm=null; function recalcDebounced(){clearTimeout(tm);tm=setTimeout(recalc,120)}
+function paramsConAlpha(){ // inyecta alpha del slider en el YAML sin reformatearlo
+  var y=$('params').value, a=$('alpha').value;
+  if(/^\s*alpha_antecedentes:.*$/m.test(y)) return y.replace(/^(\s*alpha_antecedentes:).*$/m,'$1 '+a);
+  return y.replace(/^general:\s*$/m,'general:\n  alpha_antecedentes: '+a);
+}
+async function recalc(){
+  var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value};
+  var d=await (await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent='';
+  RES=d.resultados; var t=$('tipo').value; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
+  renderTabla(); if(SEL) renderDetalle(SEL);
+}
+function fmt(x){return x==null?'—':Number(x).toFixed(1)}
+function renderTabla(){
+  var t=$('tipo').value, rows=RES.filter(function(r){return !t||r.tipo===t});
+  rows.sort(function(a,b){return (b.score_final==null?-1:b.score_final)-(a.score_final==null?-1:a.score_final)});
+  $('tabla').innerHTML=rows.map(function(r){var b=r.contribuciones._bloques||{};
+    var ex=r.estado+(r.restricciones_activas.length?' ['+r.restricciones_activas.join(',')+']':'')+(r.alertas.length?' ⚠ '+r.alertas.join(', '):'');
+    return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td><b>'+r.piloto_id+'</b> '+r.nombre+'</td><td>'+r.tipo+'</td><td class="num">'+(b.D_desempeno==null?'—':b.D_desempeno.toFixed(2))+'</td><td class="num">'+(b.P_antecedentes==null?'—':(b.P_antecedentes*100).toFixed(0)+'%')+'</td><td class="num">'+fmt(r.score_comportamental)+'</td><td class="num"><b>'+fmt(r.score_final)+'</b></td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span></td><td>'+r.vigencia+' <small>'+r.confianza+'</small></td><td class="num">'+r.n_aplicables+'</td><td class="est-'+r.estado+'">'+ex+'</td></tr>'}).join('');
+  Array.prototype.forEach.call($('tabla').querySelectorAll('tr'),function(tr){tr.onclick=function(){SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
+}
+function renderDetalle(k){
+  var r=RES.filter(function(x){return x.piloto_id+'|'+x.tipo===k})[0]; if(!r)return; var b=r.contribuciones._bloques;
+  var h='<h2>Desglose · '+r.piloto_id+' '+r.nombre+' · '+r.tipo+'</h2>';
+  if(b) h+='<div class="bloques"><div>D desempeño = <b>'+b.D_desempeno.toFixed(3)+'</b></div><div>P antecedentes = <b>'+(b.P_antecedentes*100).toFixed(1)+'%</b></div><div>factor = 1 − '+b.alpha+'·P = <b>'+b.factor.toFixed(3)+'</b></div><div>score = D·factor = <b>'+(b.D_desempeno*b.factor).toFixed(2)+'</b></div>'+(r.tope_por_regla!=null?'<div>tope por regla = <b>'+r.tope_por_regla+'</b></div>':'')+'<div>estado <b>'+r.estado+'</b> · '+r.vigencia+' (n='+r.n_aplicables+', n_min='+r.n_min+')</div></div>';
+  h+='<table><thead><tr><th>Variable</th><th>Bloque</th><th class="num">Sub</th><th class="num">Peso ef.</th><th class="num">Aporte / desc.</th><th>Detalle</th></tr></thead><tbody>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v], c=r.contribuciones[v];
+    if(s.score==null){h+='<tr style="color:#9ca3af"><td>'+v+'</td><td colspan="4">('+s.motivo+')</td><td></td></tr>';return}
+    var det=Object.keys(s.detalle).filter(function(k){return k!=='edades_dias'}).map(function(k){return k+'='+s.detalle[k]}).join(', ');
+    var ap=!c?'0':(c.bloque==='desempeno'?'+'+c.aporte.toFixed(2):'−'+(c.descuento*100).toFixed(1)+'%');
+    h+='<tr'+(c&&c.bloque==='antecedentes'?' style="color:#7a1f1f"':'')+'><td>'+v+'</td><td>'+(c?c.bloque:'(peso 0)')+'</td><td class="num">'+s.score.toFixed(2)+'</td><td class="num">'+(c?(c.peso_efectivo*100).toFixed(1)+'%':'0%')+'</td><td class="num">'+ap+'</td><td><small>'+det+'</small></td></tr>'});
+  $('detalle').innerHTML=h+'</tbody></table>';
+}
+$('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('recalc').onclick=recalc;
+$('alpha').oninput=function(){$('alphaV').textContent=$('alpha').value;recalcDebounced()};
+$('guardarPesos').onclick=async function(){var d=await (await fetch('/api/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pesos:PESOS})})).json();$('msg').textContent=d.ok?'✓ pesos.yaml guardado':d.error};
+$('guardarParams').onclick=async function(){var d=await (await fetch('/api/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parametros_yaml:paramsConAlpha()})})).json();$('msg').textContent=d.ok?'✓ parametros.yaml guardado':d.error;if(d.ok)$('params').value=paramsConAlpha()};
+init();
+</script></body></html>

@@ -1,0 +1,12 @@
+piloto_id,nombre,tipo,dias_antiguedad,n_finalizados,n_cancel_piloto,n_cancel_pasajero,n_cancel_plataforma,n_otros_atribuibles,n_sin_novedad_a_tiempo,n_alto_valor,n_alto_valor_ok,n_res_cumplidas,n_res_incumplidas_atrib,n_res_cancel_atrib,n_res_no_atrib
+P001,Ana Sostenida,B2B,900,180,3,12,1,0,172,25,25,30,1,0,2
+P002,Bruno Nuevo,RENT,12,6,1,2,0,0,,,,,,,
+P003,Carla Suspension Vieja,RENT,1500,400,10,60,2,0,,,,,,,
+P004,Diego Negativo Reciente,B2C,400,40,9,5,0,1,30,8,5,,,,
+P005,Elena AltoValor Novedades,B2B,700,90,2,6,0,0,70,40,28,10,4,0,1
+P006,Fabian Multi Suspension,RENT,800,120,20,15,1,2,,,,,,,
+P007,Gloria Cero Servicios,B2C,3,0,0,0,0,0,,,,,,,
+P008,Hugo Expulsion Historica,B2B,1100,50,6,4,0,0,46,4,4,8,0,1,0
+P009,Ivan Una Cancelacion,RENT,600,100,1,10,0,0,,,,,,,
+P010,Julia AltoValor Limpia,B2C,950,200,4,9,0,0,195,60,59,,,,
+P011,Kevin Cuenta Nueva Tope,B2B,20,25,0,1,0,0,24,2,2,5,0,0,0

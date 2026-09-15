@@ -1,0 +1,38 @@
+# ============================================================================
+# PESOS POR TIPO DE SERVICIO — PROPUESTA PRELIMINAR (no definitiva).
+# Independientes de la metodología: cambiar acá NO cambia cómo se mide nada.
+# Se renormalizan sobre las variables que apliquen y tengan dato, así que la
+# suma no tiene que ser 100; se usa 100 sólo para leerlos como porcentaje.
+# Regla: ninguna variable > max_participacion_peso (parametros.yaml).
+# ============================================================================
+B2B:
+  suspension_piloto:     15
+  suspension_pasajero:   5
+  invitacion_pibox:      8
+  invitacion_rent:       2
+  expulsion:             10
+  bloqueo_24h:           8
+  cancelacion_piloto:    15
+  finalizados:           7
+  alto_valor:            10
+  sin_novedades:         12
+  cumplimiento_reservas: 8
+RENT:
+  suspension_piloto:     18
+  suspension_pasajero:   7
+  invitacion_pibox:      3
+  invitacion_rent:       10
+  expulsion:             12
+  baneo_imei:            10
+  cancelacion_piloto:    25
+  finalizados:           15
+B2C:
+  suspension_piloto:     15
+  suspension_pasajero:   6
+  invitacion_pibox:      10
+  invitacion_rent:       3
+  expulsion:             12
+  cancelacion_piloto:    18
+  finalizados:           10
+  alto_valor:            12
+  sin_novedades:         14

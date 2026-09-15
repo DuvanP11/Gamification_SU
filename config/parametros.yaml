@@ -1,0 +1,110 @@
+# ============================================================================
+# PARÁMETROS DE MEDICIÓN — Score Operacional de Pilotos
+# Todo lo numérico de la metodología vive acá. Los PESOS van en pesos.yaml.
+# Los valores son PRELIMINARES: se calibran con la población real (ver docs).
+# ============================================================================
+
+general:
+  score_max: 5.0
+  decimales: 1
+  # Mínimo de servicios aplicables (finalizados + atribuibles) en la ventana
+  # para que el score sea DEFINITIVO. Debajo se publica como PROVISIONAL.
+  n_min_definitivo: { B2B: 20, RENT: 20, B2C: 20 }
+  # Ninguna variable puede concentrar más de esta fracción del peso total
+  # (se valida al cargar pesos.yaml, evita resultados desproporcionados).
+  max_participacion_peso: 0.35
+  # Intensidad máxima del bloque de antecedentes: SCORE = D · (1 − alpha·P).
+  # alpha = 1.0 → un historial "todo al tope" deja el score en 0; 0.5 → lo
+  # reduce como mucho a la mitad. Los pesos de eventos son relativos entre sí.
+  alpha_antecedentes: 1.0
+  # Ventana (días) de las TASAS operativas. Los eventos usan semivida, no ventana.
+  ventana_tasas_dias: 90
+  # Eventos más viejos que esto no se cuentan (su carga ya es ~0 de todos modos).
+  ventana_eventos_dias: 730
+
+# Bandas del score (propuesta: el 5.0 exacto es casi inalcanzable con un
+# promedio ponderado, por eso "excelente" arranca en 4.5). Cerradas por abajo.
+bandas:
+  - { desde: 4.5, nombre: EXCELENTE }
+  - { desde: 3.5, nombre: BUENO }
+  - { desde: 2.5, nombre: ACEPTABLE }
+  - { desde: 1.5, nombre: DEFICIENTE }
+  - { desde: 0.5, nombre: CRITICO }
+  - { desde: 0.0, nombre: EXTREMADAMENTE_CRITICO }
+
+# ---------------------------------------------------------------------------
+# VARIABLES DE EVENTO (negativas). carga = Σ severidad · 0.5^(edad_dias/semivida)
+# sub_score = 5 · (1 − min(1, carga / tope))
+#   semivida_dias : a esa edad un evento pesa la mitad.
+#   tope          : carga a la que el sub-score llega a 0 (ej. 2 = "dos eventos
+#                   de hoy" o "cuatro de hace una semivida").
+#   severidad     : multiplicador por evento (1.0 = evento estándar).
+#   activo_restringe: si hay un evento ACTIVO (vigente), el piloto queda en
+#                   estado RESTRINGIDO independientemente del score.
+# ---------------------------------------------------------------------------
+eventos:
+  suspension_piloto:  { semivida_dias: 180, tope: 2.0, severidad: 1.0, activo_restringe: true }
+  suspension_pasajero: { semivida_dias: 180, tope: 3.0, severidad: 1.0, activo_restringe: false }
+  invitacion_pibox:   { semivida_dias: 90,  tope: 4.0, severidad: 1.0, activo_restringe: false }
+  invitacion_rent:    { semivida_dias: 90,  tope: 4.0, severidad: 1.0, activo_restringe: false }
+  expulsion:          { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
+  baneo_imei:         { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
+  bloqueo_24h:        { semivida_dias: 60,  tope: 3.0, severidad: 1.0, activo_restringe: true }
+
+# ---------------------------------------------------------------------------
+# VARIABLES DE TASA. tasa_ajustada = (x + m·p0) / (n + m)   (suavizado bayesiano)
+# sub_score = rampa(tasa_ajustada, x_score0, x_score5): lineal entre los dos
+# puntos, recortada a [0,5]. Si x_score0 > x_score5 la variable es "menos es mejor".
+#   p0 : tasa de referencia poblacional (CALIBRAR con datos reales).
+#   m  : pseudo-observaciones (fuerza del prior). Con n = m el dato del piloto
+#        pesa lo mismo que la referencia.
+# ---------------------------------------------------------------------------
+tasas:
+  cancelacion_piloto:
+    p0: 0.08
+    m: 10
+    x_score0: 0.30      # ≥30 % de cancelación propia → 0
+    x_score5: 0.03      # ≤3 % → 5
+  sin_novedades:
+    p0: 0.90
+    m: 10
+    x_score0: 0.60
+    x_score5: 0.97
+  cumplimiento_reservas:
+    p0: 0.90
+    m: 5
+    x_score0: 0.60
+    x_score5: 0.97
+  alto_valor:
+    # Un servicio es "alto valor" si valor_declarado ≥ umbral (por tipo).
+    umbral_valor: { B2B: 500000, B2C: 300000 }
+    p0: 0.90          # cumplimiento de referencia en servicios de alto valor
+    m: 5
+    x_score0: 0.60
+    x_score5: 0.97
+    # Exposición = media geométrica de min(1, n_av/n_ref) y min(1, prop_av/prop_ref).
+    # El sub-score se mueve desde el neutro (rampa(p0)) hacia rampa(cumplimiento)
+    # en proporción a la exposición: pocos servicios caros ≈ sin efecto.
+    n_ref: 10
+    prop_ref: 0.20
+
+# ---------------------------------------------------------------------------
+# VOLUMEN / EXPERIENCIA (positiva, saturante): sub = 5·min(1, ln(1+n)/ln(1+n_ref))
+# ---------------------------------------------------------------------------
+volumen:
+  finalizados: { n_ref: { B2B: 150, RENT: 200, B2C: 150 } }
+
+# Aplicabilidad de cada variable por tipo (matriz del requerimiento).
+aplicabilidad:
+  suspension_piloto:     [B2B, RENT, B2C]
+  suspension_pasajero:   [B2B, RENT, B2C]
+  invitacion_pibox:      [B2B, RENT, B2C]
+  invitacion_rent:       [B2B, RENT, B2C]
+  expulsion:             [B2B, RENT, B2C]
+  baneo_imei:            [RENT]
+  bloqueo_24h:           [B2B]
+  cancelacion_piloto:    [B2B, RENT, B2C]
+  finalizados:           [B2B, RENT, B2C]
+  alto_valor:            [B2B, B2C]
+  sin_novedades:         [B2B, B2C]
+  cumplimiento_reservas: [B2B]

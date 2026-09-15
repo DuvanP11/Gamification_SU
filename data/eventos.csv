@@ -1,0 +1,12 @@
+piloto_id,tipo_evento,fecha,activo,severidad
+P003,suspension_piloto,2025-01-20,0,
+P004,suspension_piloto,2026-09-05,0,
+P004,invitacion_pibox,2026-08-26,0,
+P006,suspension_piloto,2026-08-16,0,
+P006,suspension_piloto,2026-06-17,0,
+P006,suspension_piloto,2026-02-27,0,
+P006,baneo_imei,2026-09-01,1,
+P008,expulsion,2025-08-11,0,
+P008,invitacion_rent,2024-03-01,0,
+P011,bloqueo_24h,2026-09-10,0,
+P011,suspension_pasajero,2026-07-01,0,
