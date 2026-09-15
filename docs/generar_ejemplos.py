@@ -9,18 +9,18 @@ from score.io import cargar_config, cargar_datos, RAIZ
 
 HOY = date(2026, 9, 15)
 P, W, R = cargar_config()
-res = [evaluar(m, P, W, R, HOY) for m in cargar_datos(RAIZ / "data")]
+res = [evaluar(m, P, W, R, HOY) for m in cargar_datos(RAIZ / "data") if m.caso]   # sólo los casos con nombre
 f = lambda x: "—" if x is None else f"{x:.1f}"
-print("| Piloto | Tipo | Caso | D | P | Score | Final | Banda | Vigencia | Estado |")
-print("|---|---|---|---:|---:|---:|---:|---|---|---|")
+print("| Piloto | Tipo | Caso | D | P | Score | Final | Banda | Vigencia | Estado | Observaciones |")
+print("|---|---|---|---:|---:|---:|---:|---|---|---|---|")
 for r in res:
     b = r["contribuciones"].get("_bloques") or {}
     est = r["estado"] + (" [" + ",".join(r["restricciones_activas"]) + "]" if r["restricciones_activas"] else "") + (" ⚠ " + ", ".join(r["alertas"]) if r["alertas"] else "")
-    print(f"| {r['piloto_id']} | {r['tipo']} | {r['nombre']} | {f(b.get('D_desempeno'))} | {'—' if not b else f'{b['P_antecedentes']:.0%}'} | {f(r['score_comportamental'])} | **{f(r['score_final'])}** | {r['banda'] or 'SIN SCORE'} | {r['vigencia']} ({r['confianza']}) | {est} |")
+    print(f"| {r['piloto_id']} | {r['tipo']} | {r['caso']} | {f(b.get('D_desempeno'))} | {'—' if not b else f'{b['P_antecedentes']:.0%}'} | {f(r['score_comportamental'])} | **{f(r['score_final'])}** | {r['banda'] or 'SIN SCORE'} | {r['vigencia']} ({r['confianza']}) | {est} | {'; '.join(r['observaciones']) or '—'} |")
 
 def desglose(pid):
     r = [x for x in res if x["piloto_id"] == pid][0]; b = r["contribuciones"]["_bloques"]
-    print(f"\n**{pid} · {r['nombre']} · {r['tipo']}** — D = {b['D_desempeno']:.3f}, P = {b['P_antecedentes']:.3f}, "
+    print(f"\n**{pid} · {r['nombre']} ({r['caso']}) · {r['tipo']}** — D = {b['D_desempeno']:.3f}, P = {b['P_antecedentes']:.3f}, "
           f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}, score = {b['D_desempeno']*b['factor']:.2f} → **{r['score_final']}** "
           f"({r['banda']}, {r['vigencia']}, estado {r['estado']}"
           + (f", tope por regla {r['tope_por_regla']}" if r['tope_por_regla'] is not None else "") + ")\n")

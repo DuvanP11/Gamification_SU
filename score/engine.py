@@ -13,12 +13,12 @@
 from __future__ import annotations
 import math
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 
 TIPOS = ("B2B", "RENT", "B2C")
 
 EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
-           "invitacion_rent", "expulsion", "baneo_imei", "bloqueo_24h")
+           "invitacion_rent", "expulsion", "baneo_imei")
 
 
 # ────────────────────────────── primitivas ──────────────────────────────
@@ -75,6 +75,22 @@ def sub_score_volumen(n: int, n_ref: int, score_max: float = 5.0) -> float:
     return score_max * clip(math.log1p(n) / math.log1p(n_ref), 0.0, 1.0)
 
 
+def horas_habiles(inicio: datetime, fin: datetime) -> float:
+    """Horas entre inicio y fin SIN contar sábados ni domingos (la "excepción
+    de fin de semana" del recaudo). Un recaudo del viernes 18:00 tiene hasta el
+    lunes 18:00. SQL: ver docs/METODOLOGIA.md §3.8."""
+    if fin <= inicio:
+        return 0.0
+    total, t = 0.0, inicio
+    while t < fin:
+        siguiente_dia = (t + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tramo_fin = min(fin, siguiente_dia)
+        if t.weekday() < 5:            # 0..4 = lunes..viernes
+            total += (tramo_fin - t).total_seconds() / 3600
+        t = tramo_fin
+    return total
+
+
 # ────────────────────────────── entradas ──────────────────────────────
 @dataclass
 class Evento:
@@ -85,6 +101,13 @@ class Evento:
 
 
 @dataclass
+class Recaudo:
+    """Un recaudo contra entrega que el piloto debía abonar a Picap."""
+    fecha_recaudo: datetime
+    fecha_abono: datetime | None = None   # None = sigue sin pagar
+
+
+@dataclass
 class Metricas:
     """Agregados del piloto para UN tipo de servicio en la ventana de tasas.
     None = dato no disponible (≠ 0). Los conteos de reservas / alto valor /
@@ -92,6 +115,14 @@ class Metricas:
     piloto_id: str
     tipo: str
     nombre: str = ""
+    caso: str = ""                # sólo datos de prueba: qué escenario representa
+    # Contexto (no puntúa, se muestra junto al score)
+    driver_id: str = ""
+    passenger_id: str = ""
+    activado_piloto: date | None = None
+    activado_pasajero: date | None = None
+    calif_gamification: float | None = None   # calificación del gamification (BD ClickHouse existente)
+    calif_app: float | None = None            # calificación en la app
     dias_antiguedad: int | None = None
     n_finalizados: int = 0
     n_cancel_piloto: int = 0
@@ -109,6 +140,7 @@ class Metricas:
     n_res_cancel_atrib: int | None = None
     n_res_no_atrib: int | None = None  # informativo: NO entra al denominador
     eventos: list[Evento] = field(default_factory=list)
+    recaudos: list[Recaudo] = field(default_factory=list)   # B2B: recaudos con no pago
     reglas_activas: list[str] = field(default_factory=list)
 
     @property
@@ -222,7 +254,44 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
                                             "exposicion": round(expo, 4), "cumplimiento_ajustado": round(adj, 4),
                                             "score_neutro": round(s_neutro, 3), "score_desempeno": round(s_desemp, 3)}}
 
-    # 6) Cumplimiento de reservas (B2B)
+    # 6) Recaudo pagado en ≤ 24 h hábiles (B2B). Cada recaudo que el piloto no
+    #    abonó en el momento es un "episodio"; se mide qué fracción de esos
+    #    episodios cerró dentro del límite (sin contar fin de semana).
+    var = "recaudo_24h"
+    if m.tipo not in aplica[var]:
+        no(var, "no_aplica")
+    elif not m.recaudos:
+        no(var, "sin_dato")
+    else:
+        c = params["tasas"][var]
+        lim = float(c["limite_horas"]); fds = bool(c.get("excluir_fin_de_semana", True))
+        ahora = datetime(hoy.year, hoy.month, hoy.day, 23, 59, 59)
+        a_tiempo = tarde = pendientes = vencidos = 0
+        horas_list = []
+        for rc in m.recaudos:
+            fin = rc.fecha_abono or ahora
+            h = horas_habiles(rc.fecha_recaudo, fin) if fds else max(0.0, (fin - rc.fecha_recaudo).total_seconds() / 3600)
+            if rc.fecha_abono is None:
+                pendientes += 1
+                if h > lim: vencidos += 1
+                horas_list.append(None)
+            else:
+                horas_list.append(round(h, 1))
+                if h <= lim: a_tiempo += 1
+                else: tarde += 1
+        # Un pendiente que aún está dentro del plazo no cuenta (todavía puede pagar).
+        n = a_tiempo + tarde + vencidos
+        if n == 0:
+            no(var, "sin_dato")
+        else:
+            adj = tasa_ajustada(a_tiempo, n, c["p0"], c["m"])
+            out[var] = {"score": rampa(adj, c["x_score0"], c["x_score5"], smax),
+                        "detalle": {"episodios": len(m.recaudos), "a_tiempo": a_tiempo, "tarde": tarde,
+                                    "vencidos_sin_pagar": vencidos, "pendientes_en_plazo": pendientes - vencidos,
+                                    "n": n, "limite_horas": lim, "tasa_cruda": round(a_tiempo / n, 4),
+                                    "tasa_ajustada": round(adj, 4), "horas_por_episodio": horas_list}}
+
+    # 7) Cumplimiento de reservas (B2B)
     var = "cumplimiento_reservas"
     if m.tipo not in aplica[var]:
         no(var, "no_aplica")
@@ -334,6 +403,51 @@ def banda(score: float | None, bandas: list[dict]) -> str | None:
     return bandas[-1]["nombre"]
 
 
+def observaciones(m: Metricas, subs: dict, vigencia: str, n_min: int, restricciones: list[str],
+                  alertas: list[str], params: dict) -> list[str]:
+    """Frases cortas, en lenguaje de Operaciones, con lo que más explica el
+    score de este piloto. Se derivan de los sub-scores, no se escriben a mano."""
+    obs = []
+    # (singular, plural)
+    NOMBRE_EV = {"suspension_piloto": ("Suspensión como piloto", "suspensiones como piloto"),
+                 "suspension_pasajero": ("Suspensión como pasajero", "suspensiones como pasajero"),
+                 "invitacion_pibox": ("Invitación Pibox", "invitaciones Pibox"),
+                 "invitacion_rent": ("Invitación Rent", "invitaciones Rent"),
+                 "expulsion": ("Expulsión", "expulsiones"), "baneo_imei": ("Baneo de IMEI", "baneos de IMEI")}
+    if vigencia == "PROVISIONAL":
+        obs.append(f"Piloto con pocos servicios en la ventana: {m.n_aplicables} de {n_min} necesarios (score provisional)")
+    for r in restricciones:
+        obs.append(f"{NOMBRE_EV[r][0]} VIGENTE")
+    for var in EVENTOS:
+        d = (subs.get(var) or {}).get("detalle")
+        if not d or not d["en_ventana"]:
+            continue
+        ult = min(d["edades_dias"]); n = d["en_ventana"]
+        obs.append(f"{n} {NOMBRE_EV[var][1]} (última hace {ult} días)" if n > 1 else f"{NOMBRE_EV[var][0]} hace {ult} días")
+    d = (subs.get("cancelacion_piloto") or {}).get("detalle")
+    if d and subs["cancelacion_piloto"]["score"] < 3:
+        obs.append(f"Cancelación propia alta: {d['x']} de {d['n']} ({d['tasa_cruda']:.0%})")
+    d = (subs.get("sin_novedades") or {}).get("detalle")
+    if d and subs["sin_novedades"]["score"] < 3:
+        obs.append(f"Novedades frecuentes: sólo {d['x']} de {d['n']} sin novedad y a tiempo ({d['tasa_cruda']:.0%})")
+    d = (subs.get("alto_valor") or {}).get("detalle")
+    if d and subs["alto_valor"]["score"] < d["score_neutro"] - 0.5:
+        obs.append(f"Novedades en servicios de alto valor: {d['ok']} de {d['n_alto_valor']} bien")
+    d = (subs.get("cumplimiento_reservas") or {}).get("detalle")
+    if d and subs["cumplimiento_reservas"]["score"] < 3:
+        obs.append(f"Incumple reservas: {d['incumplidas_atrib']} de {d['n']}")
+    d = (subs.get("recaudo_24h") or {}).get("detalle")
+    if d:
+        if d["vencidos_sin_pagar"]:
+            obs.append(f"Recaudo vencido sin pagar ({d['vencidos_sin_pagar']})")
+        if d["tarde"]:
+            obs.append(f"Recaudos pagados después de {int(d['limite_horas'])} h: {d['tarde']} de {d['n']}")
+    for a in alertas:
+        if not a.startswith("recaudo_pendiente"):
+            obs.append(f"Regla activa: {a}")
+    return obs
+
+
 def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | None = None) -> dict:
     """Pipeline completo para un piloto × tipo. Devuelve un dict serializable
     con el desglose entero (auditable)."""
@@ -355,6 +469,9 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
     sc, contrib = score_comportamental(subs, pesos_tipo, g.get("alpha_antecedentes", 1.0), g["score_max"])
 
     reg = aplicar_reglas(sc, m.reglas_activas, reglas.get("reglas", {}))
+    rc = subs.get("recaudo_24h", {}).get("detalle") or {}
+    if rc.get("vencidos_sin_pagar") and params["tasas"]["recaudo_24h"].get("pendiente_alerta", True):
+        reg["alertas"].append(f"recaudo_pendiente ({rc['vencidos_sin_pagar']} vencido/s sin pagar)")
     estado = reg["estado"]
     if restricciones and estado != "BLOQUEADO":
         estado = "RESTRINGIDO"
@@ -364,10 +481,16 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
     else:
         vigencia = "DEFINITIVO" if n >= n_min else "PROVISIONAL"
 
+    obs = observaciones(m, subs, vigencia, n_min, restricciones, reg["alertas"], params)
     d = g["decimales"]
     red = lambda v: None if v is None else round(v + 1e-12, d)
     return {
         "piloto_id": m.piloto_id, "nombre": m.nombre, "tipo": m.tipo,
+        "driver_id": m.driver_id, "passenger_id": m.passenger_id,
+        "activado_piloto": m.activado_piloto.isoformat() if m.activado_piloto else None,
+        "activado_pasajero": m.activado_pasajero.isoformat() if m.activado_pasajero else None,
+        "calif_gamification": m.calif_gamification, "calif_app": m.calif_app,
+        "caso": m.caso, "observaciones": obs,
         "score_comportamental": red(sc),
         "score_final": red(reg["score_final"]),
         "banda": banda(reg["score_final"], params["bandas"]),

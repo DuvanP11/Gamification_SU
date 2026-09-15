@@ -2,3 +2,9 @@ piloto_id,regla
 P008,cancelaciones_en_racha
 P011,cuenta_nueva_retiro_alto
 P006,imei_compartido
+P108,fake_gps
+P122,fake_gps
+P133,cuenta_nueva_retiro_alto
+P134,fake_gps
+P170,cuenta_nueva_retiro_alto
+P194,fake_gps

@@ -53,13 +53,13 @@ small{color:var(--muted)}
    <div style="margin-top:6px"><button class="p" id="recalc">Recalcular</button> <small>los sliders recalculan solos</small></div></div>
  </div>
  <div>
-  <div class="card"><h2>Ranking</h2><table><thead><tr><th>Piloto</th><th>Tipo</th><th class="num" title="Promedio ponderado de las variables de desempeño (0–5)">Desempeño</th><th class="num" title="Cuánto descuentan los antecedentes">Desc. antec.</th><th class="num" title="Desempeño × (1 − descuento)">Score</th><th class="num" title="Después de reglas (tope)">Final</th><th>Banda</th><th>Vigencia</th><th class="num">n</th><th>Estado / alertas</th></tr></thead><tbody id="tabla"></tbody></table></div>
+  <div class="card"><h2>Ranking <small id="rankInfo"></small></h2><div id="ranking"></div></div>
   <div class="card" style="margin-top:12px" id="detalle"><h2>Desglose</h2><small>Clic en un piloto.</small></div>
  </div>
 </main>
 <script>
 var CFG=null, PESOS=null, RES=[], SEL=null, VARS=[];
-var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','bloqueo_24h'];
+var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei'];
 function $(id){return document.getElementById(id)}
 async function init(){
   CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
@@ -86,19 +86,32 @@ async function recalc(){
   var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value};
   var d=await (await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent='';
-  RES=d.resultados; PARAMS=d.parametros; var t=$('tipo').value; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
+  RES=d.resultados; PARAMS=d.parametros; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
   renderTabla(); if(SEL) renderDetalle(SEL);
 }
 function fmt(x){return x==null?'—':Number(x).toFixed(1)}
+function fecha(d){return d?d.slice(0,10):'—'}
+function calif(x){return x==null?'—':Number(x).toFixed(1)}
+function idCorto(id){return id?'<span title="'+id+'" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">'+id.slice(0,8)+'…</span>':'—'}
+function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.push('<i>caso de prueba: '+r.caso+'</i>');
+  return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td><td><b>'+r.nombre+'</b><br><small>'+r.piloto_id+' · '+r.tipo+'</small></td>'+
+   '<td>'+idCorto(r.driver_id)+'<br>'+idCorto(r.passenger_id)+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+calif(r.calif_gamification)+'<br>'+calif(r.calif_app)+'</td>'+
+   '<td class="num"><b style="font-size:15px">'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<br><small>score '+fmt(r.score_comportamental)+'</small>':'')+'</td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><br><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
+   '<td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
+function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
+  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID piloto<br>ID pasajero</th><th>Activación piloto<br>Activación pasajero</th><th class="num">Gamification<br>App</th><th class="num">Score</th><th>Banda</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
 function renderTabla(){
-  var t=$('tipo').value, rows=RES.filter(function(r){return !t||r.tipo===t});
-  rows.sort(function(a,b){return (b.score_final==null?-1:b.score_final)-(a.score_final==null?-1:a.score_final)});
-  $('tabla').innerHTML=rows.map(function(r){var b=r.contribuciones._bloques||{};
-    var ex=r.estado+(r.restricciones_activas.length?' ['+r.restricciones_activas.join(',')+']':'')+(r.alertas.length?' ⚠ '+r.alertas.join(', '):'');
-    return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td><b>'+r.piloto_id+'</b> '+r.nombre+'</td><td>'+r.tipo+'</td><td class="num">'+(b.D_desempeno==null?'—':b.D_desempeno.toFixed(2))+'</td><td class="num">'+(b.P_antecedentes==null?'—':(b.P_antecedentes*100).toFixed(0)+'%')+'</td><td class="num">'+fmt(r.score_comportamental)+'</td><td class="num"><b>'+fmt(r.score_final)+'</b></td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span></td><td>'+r.vigencia+' <small>'+r.confianza+'</small></td><td class="num">'+r.n_aplicables+'</td><td class="est-'+r.estado+'">'+ex+'</td></tr>'}).join('');
-  Array.prototype.forEach.call($('tabla').querySelectorAll('tr'),function(tr){tr.onclick=function(){SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
+  var t=$('tipo').value, todos=RES.filter(function(r){return !t||r.tipo===t});
+  var con=todos.filter(function(r){return r.score_final!=null}).sort(function(a,b){return b.score_final-a.score_final||b.n_aplicables-a.n_aplicables});
+  var sin=todos.filter(function(r){return r.score_final==null});
+  var N=10, top=con.slice(0,N), peores=con.length>N?con.slice(Math.max(N,con.length-N)):[], medio=[];
+  if(con.length>2*N){var c=Math.floor(con.length/2), ini=Math.max(N,Math.min(c-Math.floor(N/2),con.length-N-N)); medio=con.slice(ini,ini+N); var iniM=ini}
+  $('rankInfo').textContent='· '+con.length+' pilotos con score'+(sin.length?' · '+sin.length+' sin score (0 servicios)':'')+(t?' · '+t:'')+' · clic en una fila para ver el desglose';
+  $('ranking').innerHTML=bloqueRank('Top 10 mejores',top,0,'#15803d')+bloqueRank('10 del medio',medio,medio.length?iniM:0,'#ca8a04')+bloqueRank('10 peores',peores,con.length-peores.length,'#dc2626')
+    +(sin.length?'<div class="nota">Sin score (0 servicios en la ventana): '+sin.map(function(r){return r.nombre+' ('+r.piloto_id+')'}).join(', ')+'</div>':'');
+  Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.onclick=function(){SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
 }
-var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],bloqueo_24h:['Bloqueos de 24 h','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño']};
+var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
 var PARAMS=null;
 function pct(x,d){return (x*100).toFixed(d==null?0:d).replace('.',',')+' %'}
 function dias(n){if(n>=365){var a=n/365;return a%1<0.1?Math.round(a)+(Math.round(a)===1?' año':' años'):a.toFixed(1).replace('.',',')+' años'}return n>=60?Math.round(n/30)+' meses':n+' días'}
@@ -127,6 +140,10 @@ function explicar(v,s,r){
   if(v==='alto_valor'){var c=P.tasas[v], ex=d.exposicion, nivel=ex>=0.8?'alta':ex>=0.4?'media':'baja';
     return {que:'<b>'+d.n_alto_valor+'</b> servicios de alto valor ('+pct(d.proporcion)+' de sus servicios), <b>'+d.ok+'</b> sin novedad.',
             como:'Exposición '+nivel+' ('+ex.toFixed(2)+' de 1: se necesitan '+c.n_ref+' servicios y que sean el '+pct(c.prop_ref)+' del total). Cumplimiento ajustado '+pct(d.cumplimiento_ajustado,1)+' → '+d.score_desempeno.toFixed(2)+' pts; con poca exposición el resultado se queda cerca del neutro ('+d.score_neutro.toFixed(2)+').'};}
+  if(v==='recaudo_24h'){var c=P.tasas[v];
+    var extra=[]; if(d.vencidos_sin_pagar) extra.push('<b>'+d.vencidos_sin_pagar+' vencido'+(d.vencidos_sin_pagar>1?'s':'')+' sin pagar</b>'); if(d.pendientes_en_plazo) extra.push(d.pendientes_en_plazo+' pendiente'+(d.pendientes_en_plazo>1?'s':'')+' todavía en plazo (no cuenta)');
+    return {que:'Tuvo <b>'+d.episodios+'</b> recaudo'+(d.episodios>1?'s':'')+' sin abonar en el momento; pagó <b>'+d.a_tiempo+' de '+d.n+'</b> dentro de '+d.limite_horas+' h hábiles'+(d.tarde?', '+d.tarde+' tarde':'')+(extra.length?'; '+extra.join(', '):'')+'.',
+            como:'Las horas corren de lunes a viernes (sábado y domingo no cuentan). Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o más a tiempo = 5 puntos; '+pct(c.x_score0)+' o menos = 0.'};}
   if(v==='cumplimiento_reservas'){var c=P.tasas[v];
     return {que:'Cumplió <b>'+d.cumplidas+' de '+d.n+'</b> reservas que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.no_atribuibles_excluidas?d.no_atribuibles_excluidas+' con causa ajena no se cuentan.':''),
             como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o más = 5 puntos; '+pct(c.x_score0)+' o menos = 0.'};}

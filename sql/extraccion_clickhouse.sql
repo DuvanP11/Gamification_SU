@@ -7,8 +7,11 @@
 --   USUARIO · 104 plataforma · 101 expirado sin piloto. driver_id identifica al piloto.
 --   passengers: is_driver_suspended, suspended, expelled (strings 'true'/'1').
 --   picapmongoprod.passenger_suspensions existe (suspensiones con fecha).
+--   Recaudo: wallet_account_transactions._type = 'WalletAccountCounterDeliveryTransaction',
+--   recaudo = pata negativa CON package_id; abono = pata positiva que la cierra.
 -- Lo que FALTA confirmar: campo de tipo de servicio (B2B / RENT / B2C), valor declarado,
--- flag de novedad y de "a tiempo", reservas, invitaciones, bloqueo 24 h, baneo IMEI.
+-- flag de novedad y de "a tiempo", reservas, invitaciones, baneo IMEI, tabla del
+-- gamification y campo de calificación en la app, fechas de activación piloto/pasajero.
 
 -- ── 1. Agregados de servicios por piloto × tipo, ventana de 90 días ─────────────
 WITH toDate(now()) - 90 AS desde
@@ -31,6 +34,35 @@ WHERE b.created_at >= desde
   AND notEmpty(ifNull(toString(b.driver_id), ''))
 GROUP BY piloto_id, tipo
 FORMAT CSVWithNames;
+
+-- ── 1b. Contexto del piloto (nombre real, ids, activaciones, calificaciones) ─────
+-- SELECT toString(p._id) AS passenger_id, /* driver_id: ¿p.driver_id? */,
+--        concat(p.name, ' ', p.last_name) AS nombre,           -- TODO: nombres reales de columnas
+--        toDate(p.created_at) AS activado_pasajero,
+--        /* TODO */ NULL AS activado_piloto,
+--        /* TODO: tabla del gamification en CH */ NULL AS calif_gamification,
+--        /* TODO: rating en la app (¿p.rating? ¿drivers.rating?) */ NULL AS calif_app
+-- FROM picapmongoprod.passengers p FINAL
+
+-- ── 1c. Recaudos no abonados en el momento (data/recaudos.csv) ──────────────────
+-- WITH rec AS (
+--   SELECT booking_id, package_id, account_id, min(created_at) AS fecha_recaudo
+--   FROM picapmongoprod.wallet_account_transactions
+--   WHERE _type = 'WalletAccountCounterDeliveryTransaction'
+--     AND toFloat64OrZero(JSONExtractString(amount, 'cents')) < 0
+--     AND notEmpty(ifNull(toString(package_id), ''))          -- excluye el lote de compensación
+--     AND created_at >= toDate(now()) - 90
+--   GROUP BY booking_id, package_id, account_id),
+-- abono AS (
+--   SELECT booking_id, account_id, min(created_at) AS fecha_abono
+--   FROM picapmongoprod.wallet_account_transactions
+--   WHERE _type = 'WalletAccountCounterDeliveryTransaction'
+--     AND toFloat64OrZero(JSONExtractString(amount, 'cents')) > 0
+--   GROUP BY booking_id, account_id)
+-- SELECT /* piloto */ rec.account_id, rec.fecha_recaudo, abono.fecha_abono
+-- FROM rec LEFT JOIN abono USING (booking_id, account_id)
+-- WHERE abono.fecha_abono IS NULL OR abono.fecha_abono > rec.fecha_recaudo + INTERVAL 1 MINUTE  -- "no pagó en el momento"
+-- FORMAT CSVWithNames;
 
 -- ── 2. Eventos disciplinarios (una fila por evento) ─────────────────────────────
 -- SELECT toString(passenger_id) AS piloto_id, 'suspension_piloto' AS tipo_evento,

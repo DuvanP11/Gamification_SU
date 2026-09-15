@@ -49,7 +49,6 @@ eventos:
   invitacion_rent:    { semivida_dias: 90,  tope: 4.0, severidad: 1.0, activo_restringe: false }
   expulsion:          { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
   baneo_imei:         { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
-  bloqueo_24h:        { semivida_dias: 60,  tope: 3.0, severidad: 1.0, activo_restringe: true }
 
 # ---------------------------------------------------------------------------
 # VARIABLES DE TASA. tasa_ajustada = (x + m·p0) / (n + m)   (suavizado bayesiano)
@@ -70,6 +69,19 @@ tasas:
     m: 10
     x_score0: 0.60
     x_score5: 0.97
+  recaudo_24h:
+    # "24 hrs a excepción de un FDS": de cada recaudo contra entrega que el piloto
+    # NO abonó en el momento, ¿lo pagó dentro de limite_horas HÁBILES? (sábado y
+    # domingo no corren). Un recaudo vencido y sin pagar cuenta como NO a tiempo
+    # y además genera la alerta "recaudo_pendiente". Uno pendiente pero todavía
+    # dentro del plazo no cuenta (aún puede pagar).
+    limite_horas: 24
+    excluir_fin_de_semana: true
+    pendiente_alerta: true
+    p0: 0.85
+    m: 5
+    x_score0: 0.40      # ≤40 % pagados a tiempo → 0
+    x_score5: 0.95      # ≥95 % → 5
   cumplimiento_reservas:
     p0: 0.90
     m: 5
@@ -102,7 +114,7 @@ aplicabilidad:
   invitacion_rent:       [B2B, RENT, B2C]
   expulsion:             [B2B, RENT, B2C]
   baneo_imei:            [RENT]
-  bloqueo_24h:           [B2B]
+  recaudo_24h:           [B2B]
   cancelacion_piloto:    [B2B, RENT, B2C]
   finalizados:           [B2B, RENT, B2C]
   alto_valor:            [B2B, B2C]

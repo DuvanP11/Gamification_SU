@@ -11,7 +11,7 @@ B2B:
   invitacion_pibox:      8
   invitacion_rent:       2
   expulsion:             10
-  bloqueo_24h:           8
+  recaudo_24h:           8
   cancelacion_piloto:    15
   finalizados:           7
   alto_valor:            10

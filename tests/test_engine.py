@@ -2,8 +2,9 @@
 import unittest
 from datetime import date
 from pathlib import Path
-from score.engine import (rampa, tasa_ajustada, decaimiento, sub_score_evento, sub_score_volumen,
-                          Metricas, Evento, evaluar, validar_pesos, TIPOS, EVENTOS)
+from datetime import datetime
+from score.engine import (rampa, tasa_ajustada, decaimiento, sub_score_evento, sub_score_volumen, horas_habiles,
+                          Metricas, Evento, Recaudo, evaluar, validar_pesos, TIPOS, EVENTOS)
 from score.io import cargar_config, cargar_datos, RAIZ
 
 HOY = date(2026, 9, 15)
@@ -54,11 +55,13 @@ class Casos(unittest.TestCase):
         # Todo al peor: muchas cancelaciones, sin novedades 0, todos los eventos hoy
         m = Metricas("X", "B2B", n_finalizados=1, n_cancel_piloto=99, n_sin_novedad_a_tiempo=0,
                      n_alto_valor=50, n_alto_valor_ok=0, n_res_cumplidas=0, n_res_incumplidas_atrib=20,
+                     recaudos=[Recaudo(datetime(2026, 8, 3, 9)) for _ in range(10)],
                      eventos=[Evento(e, HOY) for e in EVENTOS for _ in range(5)])
         r = ev(m); self.assertEqual(r["score_final"], 0.0)
         # Todo al mejor
         m = Metricas("Y", "B2B", n_finalizados=500, n_cancel_piloto=0, n_sin_novedad_a_tiempo=500,
-                     n_alto_valor=100, n_alto_valor_ok=100, n_res_cumplidas=50, n_res_incumplidas_atrib=0)
+                     n_alto_valor=100, n_alto_valor_ok=100, n_res_cumplidas=50, n_res_incumplidas_atrib=0,
+                     recaudos=[Recaudo(datetime(2026, 8, 3, 9), datetime(2026, 8, 3, 12)) for _ in range(10)])
         r = ev(m); self.assertEqual(r["score_final"], 5.0)
 
     def test_cero_servicios_sin_score(self):
@@ -77,7 +80,7 @@ class Casos(unittest.TestCase):
 
     def test_no_aplica_sale_del_calculo(self):
         r = ev(Metricas("R", "RENT", n_finalizados=50))
-        for v in ("alto_valor", "sin_novedades", "cumplimiento_reservas", "bloqueo_24h"):
+        for v in ("alto_valor", "sin_novedades", "cumplimiento_reservas", "recaudo_24h"):
             self.assertEqual(r["sub_scores"][v]["motivo"], "no_aplica")
             self.assertNotIn(v, r["contribuciones"])
         r = ev(Metricas("B", "B2B", n_finalizados=50))
@@ -142,6 +145,40 @@ class Casos(unittest.TestCase):
     def test_evento_activo_restringe(self):
         r = ev(Metricas("I", "RENT", n_finalizados=100, eventos=[Evento("baneo_imei", HOY, activo=True)]))
         self.assertEqual(r["estado"], "RESTRINGIDO"); self.assertIn("baneo_imei", r["restricciones_activas"])
+
+    def test_horas_habiles_salta_fin_de_semana(self):
+        # viernes 2026-09-04 17:00 → lunes 2026-09-07 15:00: 7 h del viernes + 15 h del lunes = 22 h
+        self.assertAlmostEqual(horas_habiles(datetime(2026, 9, 4, 17), datetime(2026, 9, 7, 15)), 22.0)
+        # dentro de un mismo día hábil
+        self.assertAlmostEqual(horas_habiles(datetime(2026, 9, 8, 9), datetime(2026, 9, 8, 18, 30)), 9.5)
+        # sábado completo no cuenta
+        self.assertAlmostEqual(horas_habiles(datetime(2026, 9, 5, 0), datetime(2026, 9, 6, 0)), 0.0)
+        self.assertEqual(horas_habiles(datetime(2026, 9, 8, 9), datetime(2026, 9, 8, 8)), 0.0)
+
+    def test_recaudo_24h(self):
+        base = dict(n_finalizados=80, n_cancel_piloto=2)
+        sin = ev(Metricas("0", "B2B", **base))
+        self.assertEqual(sin["sub_scores"]["recaudo_24h"]["motivo"], "sin_dato")
+        vie = datetime(2026, 9, 4, 17)
+        ok = ev(Metricas("A", "B2B", recaudos=[Recaudo(vie, datetime(2026, 9, 7, 15))], **base))   # 22 h hábiles
+        self.assertEqual(ok["sub_scores"]["recaudo_24h"]["detalle"]["a_tiempo"], 1)
+        tarde = ev(Metricas("B", "B2B", recaudos=[Recaudo(vie, datetime(2026, 9, 8, 15))], **base))  # 46 h hábiles
+        self.assertEqual(tarde["sub_scores"]["recaudo_24h"]["detalle"]["tarde"], 1)
+        self.assertLess(tarde["score_final"], ok["score_final"])
+        venc = ev(Metricas("C", "B2B", recaudos=[Recaudo(datetime(2026, 9, 8, 9))], **base))       # sin pagar, vencido
+        self.assertEqual(venc["sub_scores"]["recaudo_24h"]["detalle"]["vencidos_sin_pagar"], 1)
+        self.assertTrue(any(a.startswith("recaudo_pendiente") for a in venc["alertas"]))
+        self.assertTrue(any("vencido" in o for o in venc["observaciones"]))
+        plazo = ev(Metricas("D", "B2B", recaudos=[Recaudo(datetime(2026, 9, 15, 10))], **base))     # pendiente en plazo
+        self.assertEqual(plazo["sub_scores"]["recaudo_24h"]["motivo"], "sin_dato")
+        self.assertEqual(plazo["alertas"], [])
+        self.assertEqual(ev(Metricas("R", "RENT", recaudos=[Recaudo(vie)], **base))["sub_scores"]["recaudo_24h"]["motivo"], "no_aplica")
+
+    def test_observaciones_automaticas(self):
+        r = ev(Metricas("N", "RENT", n_finalizados=3, n_cancel_piloto=2, eventos=[Evento("suspension_piloto", date(2026, 9, 5))]))
+        txt = " | ".join(r["observaciones"])
+        self.assertIn("pocos servicios", txt); self.assertIn("Suspensión como piloto hace 10 días", txt); self.assertIn("Cancelación propia alta", txt)
+        self.assertEqual(ev(Metricas("L", "RENT", n_finalizados=200, n_cancel_piloto=2))["observaciones"], [])
 
     def test_datos_ejemplo_cargan_y_estan_en_rango(self):
         for m in cargar_datos(RAIZ / "data"):

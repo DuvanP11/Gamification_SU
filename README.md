@@ -12,8 +12,8 @@ score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
 score/cli.py             python3 -m score …
 score/web.py + web.html  afinador local (sliders de pesos, editor de parámetros, desglose)
-data/*.csv               11 pilotos ficticios que cubren los casos especiales
-tests/test_engine.py     19 pruebas (rango 0–5, casos especiales, no doble conteo…)
+data/*.csv               12 casos con nombre + 120 pilotos ficticios (data/generar_datos_ficticios.py)
+tests/test_engine.py     22 pruebas (rango 0–5, casos especiales, horas hábiles, no doble conteo…)
 sql/extraccion_clickhouse.sql  esqueleto para alimentar data/ desde picapmongoprod (sin verificar)
 docs/generar_ejemplos.py       regenera las tablas de ejemplo del doc con el motor real
 ```
@@ -26,6 +26,7 @@ python3 -m score
 python3 -m score --hoy 2026-09-15
 python3 -m score --tipo RENT
 python3 -m score --explicar P005
+python3 -m score --tipo B2B --top 10
 python3 -m score --json > salida.json
 python3 -m score.web
 python3 -m unittest discover -s tests
@@ -37,6 +38,7 @@ python3 -m unittest discover -s tests
 | `--hoy 2026-09-15` | fecha de corte fija (los ejemplos del doc usan esta) |
 | `--tipo RENT` | sólo un tipo |
 | `--explicar P005` | desglose variable por variable |
+| `--top 10` | los 10 mejores, 10 del medio y 10 peores, con IDs, activaciones, gamification/app y observaciones |
 | `--json` | salida para Power BI / pruebas |
 | `python3 -m score.web` | afinador en http://127.0.0.1:8765 (Ctrl+C para cerrarlo) |
 | `python3 -m unittest discover -s tests` | pruebas |
@@ -58,7 +60,9 @@ Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependenci
 
 ## Datos de entrada
 
-`data/pilotos.csv` (una fila por piloto × tipo, ventana de 90 días), `data/eventos.csv`
-(una fila por evento disciplinario, con fecha y si sigue activo) y `data/reglas_activas.csv`
-(reglas disparadas por piloto). Columnas vacías = dato no disponible (≠ 0), salvo los
+`data/pilotos.csv` (una fila por piloto × tipo, ventana de 90 días; incluye contexto:
+`driver_id`, `passenger_id`, activaciones, `calif_gamification`, `calif_app`),
+`data/eventos.csv` (una fila por evento disciplinario, con fecha y si sigue activo),
+`data/recaudos.csv` (un recaudo no abonado en el momento por fila: `fecha_recaudo`,
+`fecha_abono` vacío si sigue sin pagar) y `data/reglas_activas.csv` (reglas disparadas). Columnas vacías = dato no disponible (≠ 0), salvo los
 conteos básicos de servicios, que vacíos valen 0.
