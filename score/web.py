@@ -45,7 +45,7 @@ class H(BaseHTTPRequestHandler):
                 datos = cargar_datos(Path(body.get("datos") or RAIZ / "data"))
                 avisos = {t: validar_pesos(pesos.get(t, {}), params["general"]["max_participacion_peso"]) for t in TIPOS}
                 res = [evaluar(m, params, pesos, reglas, hoy) for m in datos]
-                self._json({"ok": True, "resultados": res, "avisos": avisos})
+                self._json({"ok": True, "resultados": res, "avisos": avisos, "parametros": params})
             except Exception as e:
                 self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 400)
             return

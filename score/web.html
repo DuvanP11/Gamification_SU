@@ -21,6 +21,21 @@ button.p{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px
 .aviso{color:var(--warn);font-size:12px;margin-top:6px}.err{color:var(--bad)}
 .bloques{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:12px}.bloques div{background:#f3f0ff;border-radius:8px;padding:6px 10px}
 small{color:var(--muted)}
+.resumen{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin:6px 0 14px}
+.paso{background:#f3f0ff;border-radius:10px;padding:10px 14px;min-width:150px;flex:1}
+.paso .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.paso .v{font-size:22px;font-weight:800;margin-top:2px}.paso .t{font-size:11px;color:var(--muted);margin-top:2px}
+.paso.final{background:#2d1f7a;color:#fff}.paso.final .k,.paso.final .t{color:#d8d2ff}
+.flecha{align-self:center;font-size:20px;color:var(--muted)}
+.sec{margin-top:14px}.sec h3{font-size:13px;margin:0 0 2px}.sec p.intro{margin:0 0 8px;color:var(--muted);font-size:12px}
+.fila{display:grid;grid-template-columns:170px 1fr 190px 150px;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.fila .nom{font-weight:600}.fila .nom small{display:block;font-weight:400}
+.fila .que{font-size:12px;white-space:normal}.fila .que b{font-weight:600}
+.barra{height:10px;background:#ececf2;border-radius:6px;overflow:hidden}.barra i{display:block;height:100%;border-radius:6px}
+.pts{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.ef{font-size:12px;white-space:normal}.ef b{font-size:14px}.ef.neg b{color:var(--bad)}.ef.pos b{color:var(--ok)}.ef.cero{color:var(--muted)}
+.nota{font-size:11px;color:var(--muted);margin-top:8px}
+.alerta{background:#fff4e5;border:1px solid #f5c98a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:12px}
+@media(max-width:900px){.fila{grid-template-columns:1fr}}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 </style></head><body>
 <header><h1>Afinador · Score de Pilotos</h1>
@@ -38,7 +53,7 @@ small{color:var(--muted)}
    <div style="margin-top:6px"><button class="p" id="recalc">Recalcular</button> <small>los sliders recalculan solos</small></div></div>
  </div>
  <div>
-  <div class="card"><h2>Ranking</h2><table><thead><tr><th>Piloto</th><th>Tipo</th><th class="num">D</th><th class="num">P</th><th class="num">Score</th><th class="num">Final</th><th>Banda</th><th>Vigencia</th><th class="num">n</th><th>Estado / alertas</th></tr></thead><tbody id="tabla"></tbody></table></div>
+  <div class="card"><h2>Ranking</h2><table><thead><tr><th>Piloto</th><th>Tipo</th><th class="num" title="Promedio ponderado de las variables de desempeño (0–5)">Desempeño</th><th class="num" title="Cuánto descuentan los antecedentes">Desc. antec.</th><th class="num" title="Desempeño × (1 − descuento)">Score</th><th class="num" title="Después de reglas (tope)">Final</th><th>Banda</th><th>Vigencia</th><th class="num">n</th><th>Estado / alertas</th></tr></thead><tbody id="tabla"></tbody></table></div>
   <div class="card" style="margin-top:12px" id="detalle"><h2>Desglose</h2><small>Clic en un piloto.</small></div>
  </div>
 </main>
@@ -71,7 +86,7 @@ async function recalc(){
   var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value};
   var d=await (await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent='';
-  RES=d.resultados; var t=$('tipo').value; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
+  RES=d.resultados; PARAMS=d.parametros; var t=$('tipo').value; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
   renderTabla(); if(SEL) renderDetalle(SEL);
 }
 function fmt(x){return x==null?'—':Number(x).toFixed(1)}
@@ -83,17 +98,71 @@ function renderTabla(){
     return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td><b>'+r.piloto_id+'</b> '+r.nombre+'</td><td>'+r.tipo+'</td><td class="num">'+(b.D_desempeno==null?'—':b.D_desempeno.toFixed(2))+'</td><td class="num">'+(b.P_antecedentes==null?'—':(b.P_antecedentes*100).toFixed(0)+'%')+'</td><td class="num">'+fmt(r.score_comportamental)+'</td><td class="num"><b>'+fmt(r.score_final)+'</b></td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span></td><td>'+r.vigencia+' <small>'+r.confianza+'</small></td><td class="num">'+r.n_aplicables+'</td><td class="est-'+r.estado+'">'+ex+'</td></tr>'}).join('');
   Array.prototype.forEach.call($('tabla').querySelectorAll('tr'),function(tr){tr.onclick=function(){SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
 }
+var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],bloqueo_24h:['Bloqueos de 24 h','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño']};
+var PARAMS=null;
+function pct(x,d){return (x*100).toFixed(d==null?0:d).replace('.',',')+' %'}
+function dias(n){if(n>=365){var a=n/365;return a%1<0.1?Math.round(a)+(Math.round(a)===1?' año':' años'):a.toFixed(1).replace('.',',')+' años'}return n>=60?Math.round(n/30)+' meses':n+' días'}
+function plural(n,s,p){return n+' '+(n===1?s:p)}
+// Qué pasó (en palabras) + cómo se convierte en puntos, por variable
+function explicar(v,s,r){
+  var d=s.detalle, t=r.tipo, P=PARAMS||CFG.parametros;
+  if(EVENTOS.indexOf(v)>=0){
+    var c=P.eventos[v], nombre=NOMBRES[v][0].toLowerCase();
+    if(!d.n_eventos) return {que:'Sin '+nombre+' registradas en los últimos '+dias(P.general.ventana_eventos_dias)+'.',como:'Sin eventos = 5 de 5. No descuenta nada.'};
+    var fuera=d.n_eventos-d.en_ventana, lista=(d.edades_dias||[]).slice().sort(function(a,b){return a-b}).map(function(e){return 'hace '+dias(e)}).join(', ');
+    var que=(d.en_ventana?plural(d.en_ventana,'evento','eventos')+' ('+lista+')':'Ninguno reciente')+(fuera?'; '+plural(fuera,'evento','eventos')+' de hace más de '+dias(P.general.ventana_eventos_dias)+' ya no cuenta':'')+'.';
+    if(!d.en_ventana) return {que:que,como:'Sin eventos recientes = 5 de 5. No descuenta nada.'};
+    var como='Cada evento pesa 1 el día que ocurre y la mitad cada '+dias(c.semivida_dias)+'; hoy suman <b>'+d.carga+'</b> de un tope de '+d.tope+' (con '+d.tope+' o más la variable llega a 0).';
+    return {que:que,como:como};
+  }
+  if(v==='cancelacion_piloto'){var c=P.tasas[v];
+    return {que:'Canceló <b>'+d.x+' de '+d.n+'</b> servicios que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.excluidos_no_atribuibles?'No se le cuentan '+d.excluidos_no_atribuibles+' cancelados por el pasajero o la plataforma.':''),
+            como:'Ajustado por volumen queda en '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o menos = 5 puntos; '+pct(c.x_score0)+' o más = 0.'};}
+  if(v==='finalizados'){
+    return {que:'<b>'+d.n+'</b> servicios finalizados en la ventana'+(d.tasa_finalizacion!=null?' (terminó el '+pct(d.tasa_finalizacion)+' de los que dependían de él)':'')+'.',
+            como:'La experiencia suma rápido al principio y se llena a los '+d.n_ref+' servicios; de ahí en adelante no da más puntos.'};}
+  if(v==='sin_novedades'){var c=P.tasas[v];
+    return {que:'<b>'+d.x+' de '+d.n+'</b> servicios finalizados salieron sin novedad y a tiempo ('+pct(d.tasa_cruda,1)+').',
+            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o más = 5 puntos; '+pct(c.x_score0)+' o menos = 0.'};}
+  if(v==='alto_valor'){var c=P.tasas[v], ex=d.exposicion, nivel=ex>=0.8?'alta':ex>=0.4?'media':'baja';
+    return {que:'<b>'+d.n_alto_valor+'</b> servicios de alto valor ('+pct(d.proporcion)+' de sus servicios), <b>'+d.ok+'</b> sin novedad.',
+            como:'Exposición '+nivel+' ('+ex.toFixed(2)+' de 1: se necesitan '+c.n_ref+' servicios y que sean el '+pct(c.prop_ref)+' del total). Cumplimiento ajustado '+pct(d.cumplimiento_ajustado,1)+' → '+d.score_desempeno.toFixed(2)+' pts; con poca exposición el resultado se queda cerca del neutro ('+d.score_neutro.toFixed(2)+').'};}
+  if(v==='cumplimiento_reservas'){var c=P.tasas[v];
+    return {que:'Cumplió <b>'+d.cumplidas+' de '+d.n+'</b> reservas que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.no_atribuibles_excluidas?d.no_atribuibles_excluidas+' con causa ajena no se cuentan.':''),
+            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o más = 5 puntos; '+pct(c.x_score0)+' o menos = 0.'};}
+  return {que:'',como:''};
+}
+function colorSub(x){return x>=4?'#16a34a':x>=3?'#65a30d':x>=2?'#ca8a04':x>=1?'#ea580c':'#dc2626'}
+function filaHTML(v,s,c,r){
+  var e=explicar(v,s,r), sub=s.score, esAnt=EVENTOS.indexOf(v)>=0, ef;
+  if(!c) ef='<div class="ef cero">Peso 0: no influye</div>';
+  else if(esAnt) ef=c.descuento>0.0005?'<div class="ef neg"><b>−'+pct(c.descuento,1)+'</b> del score<br><small>pesa '+pct(c.peso_efectivo)+' de los antecedentes: podría descontar hasta '+pct(c.peso_efectivo)+'</small></div>':'<div class="ef cero">No descuenta<br><small>pesa '+pct(c.peso_efectivo)+' de los antecedentes</small></div>';
+  else ef='<div class="ef pos"><b>+'+c.aporte.toFixed(2)+'</b> al desempeño<br><small>pesa '+pct(c.peso_efectivo)+' del desempeño (máx. +'+(c.peso_efectivo*5).toFixed(2)+')</small></div>';
+  return '<div class="fila"><div class="nom">'+NOMBRES[v][0]+'<small>'+v+'</small></div><div class="que">'+e.que+'<br><small>'+e.como+'</small></div>'+
+    '<div><div class="barra"><i style="width:'+(sub/5*100)+'%;background:'+colorSub(sub)+'"></i></div><div class="pts"><b>'+sub.toFixed(2)+'</b> de 5 puntos</div></div>'+ef+'</div>';
+}
 function renderDetalle(k){
   var r=RES.filter(function(x){return x.piloto_id+'|'+x.tipo===k})[0]; if(!r)return; var b=r.contribuciones._bloques;
   var h='<h2>Desglose · '+r.piloto_id+' '+r.nombre+' · '+r.tipo+'</h2>';
-  if(b) h+='<div class="bloques"><div>D desempeño = <b>'+b.D_desempeno.toFixed(3)+'</b></div><div>P antecedentes = <b>'+(b.P_antecedentes*100).toFixed(1)+'%</b></div><div>factor = 1 − '+b.alpha+'·P = <b>'+b.factor.toFixed(3)+'</b></div><div>score = D·factor = <b>'+(b.D_desempeno*b.factor).toFixed(2)+'</b></div>'+(r.tope_por_regla!=null?'<div>tope por regla = <b>'+r.tope_por_regla+'</b></div>':'')+'<div>estado <b>'+r.estado+'</b> · '+r.vigencia+' (n='+r.n_aplicables+', n_min='+r.n_min+')</div></div>';
-  h+='<table><thead><tr><th>Variable</th><th>Bloque</th><th class="num">Sub</th><th class="num">Peso ef.</th><th class="num">Aporte / desc.</th><th>Detalle</th></tr></thead><tbody>';
-  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v], c=r.contribuciones[v];
-    if(s.score==null){h+='<tr style="color:#9ca3af"><td>'+v+'</td><td colspan="4">('+s.motivo+')</td><td></td></tr>';return}
-    var det=Object.keys(s.detalle).filter(function(k){return k!=='edades_dias'}).map(function(k){return k+'='+s.detalle[k]}).join(', ');
-    var ap=!c?'0':(c.bloque==='desempeno'?'+'+c.aporte.toFixed(2):'−'+(c.descuento*100).toFixed(1)+'%');
-    h+='<tr'+(c&&c.bloque==='antecedentes'?' style="color:#7a1f1f"':'')+'><td>'+v+'</td><td>'+(c?c.bloque:'(peso 0)')+'</td><td class="num">'+s.score.toFixed(2)+'</td><td class="num">'+(c?(c.peso_efectivo*100).toFixed(1)+'%':'0%')+'</td><td class="num">'+ap+'</td><td><small>'+det+'</small></td></tr>'});
-  $('detalle').innerHTML=h+'</tbody></table>';
+  if(!b){$('detalle').innerHTML=h+'<div class="alerta">Sin score: no tiene servicios en la ventana sobre los que evaluar el desempeño.</div>';return}
+  var sc=b.D_desempeno*b.factor;
+  h+='<div class="resumen"><div class="paso"><div class="k">1 · Desempeño</div><div class="v">'+b.D_desempeno.toFixed(2)+' <small>/ 5</small></div><div class="t">promedio ponderado de cómo le fue en la operación</div></div><div class="flecha">→</div>'+
+     '<div class="paso"><div class="k">2 · Antecedentes</div><div class="v">−'+pct(b.P_antecedentes*b.alpha,1)+'</div><div class="t">'+(b.P_antecedentes>0?'descuento por su historial disciplinario':'historial limpio: no descuenta')+'</div></div><div class="flecha">→</div>'+
+     '<div class="paso"><div class="k">3 · Score</div><div class="v">'+sc.toFixed(2)+'</div><div class="t">'+b.D_desempeno.toFixed(2)+' × (1 − '+pct(b.P_antecedentes*b.alpha,1)+')</div></div>'+
+     (r.tope_por_regla!=null?'<div class="flecha">→</div><div class="paso"><div class="k">4 · Regla</div><div class="v">tope '+r.tope_por_regla.toFixed(1)+'</div><div class="t">'+r.alertas.join(', ')+'</div></div>':'')+
+     '<div class="flecha">=</div><div class="paso final"><div class="k">Score final</div><div class="v">'+fmt(r.score_final)+' <small>'+(r.banda||'')+'</small></div><div class="t">'+(r.vigencia==='DEFINITIVO'?'definitivo: '+r.n_aplicables+' servicios (mín. '+r.n_min+')':'PROVISIONAL: sólo '+r.n_aplicables+' servicios de los '+r.n_min+' necesarios')+'</div></div></div>';
+  if(r.estado==='BLOQUEADO') h+='<div class="alerta">⛔ <b>Bloqueado por regla de riesgo</b> ('+r.alertas.join(', ')+'). El score se calcula igual pero no habilita nada.</div>';
+  else if(r.estado==='RESTRINGIDO') h+='<div class="alerta">⚠ <b>Restringido</b>: tiene vigente '+r.restricciones_activas.join(', ')+'. El score se muestra, pero la restricción manda.</div>';
+  if(r.alertas.length&&r.estado!=='BLOQUEADO'&&r.tope_por_regla==null) h+='<div class="alerta">ℹ Reglas activas sólo como alerta (la conducta ya la mide el score): '+r.alertas.join(', ')+'</div>';
+  var noap=[], sind=[];
+  h+='<div class="sec"><h3>Cómo le fue en la operación (desempeño)</h3><p class="intro">Cada variable da de 0 a 5 puntos; el desempeño es el promedio, donde cada una pesa según su importancia.</p>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(EVENTOS.indexOf(v)>=0)return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
+  h+='</div><div class="sec"><h3>Su historial (antecedentes)</h3><p class="intro">Un historial limpio no suma puntos: sólo descuenta cuando hay eventos, y cada evento pierde peso con el tiempo.</p>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(EVENTOS.indexOf(v)<0)return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
+  h+='</div>';
+  if(noap.length) h+='<div class="nota">No aplican en '+r.tipo+' (fuera del cálculo, no cuentan como 0): '+noap.join(', ')+'.</div>';
+  if(sind.length) h+='<div class="nota">Sin dato para evaluar (fuera del cálculo): '+sind.join(', ')+'.</div>';
+  $('detalle').innerHTML=h;
 }
 $('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('recalc').onclick=recalc;
 $('alpha').oninput=function(){$('alphaV').textContent=$('alpha').value;recalcDebounced()};
