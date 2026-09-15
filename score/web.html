@@ -188,8 +188,17 @@ async function renderDetalle(k){
      (r.tope_por_regla!=null?'<div class="flecha">→</div><div class="paso"><div class="k">4 · Regla</div><div class="v">tope '+r.tope_por_regla.toFixed(1)+'</div><div class="t">'+r.alertas.join(', ')+'</div></div>':'')+
      '<div class="flecha">=</div><div class="paso final"><div class="k">Score final</div><div class="v">'+fmt(r.score_final)+' <small>'+(r.banda||'')+'</small></div><div class="t">'+(r.vigencia==='DEFINITIVO'?'definitivo: '+r.n_aplicables+' servicios (mín. '+r.n_min+')':'PROVISIONAL: sólo '+r.n_aplicables+' servicios de los '+r.n_min+' necesarios')+'</div></div></div>';
   if(r.estado==='BLOQUEADO') h+='<div class="alerta">⛔ <b>Bloqueado por regla de riesgo</b> ('+r.alertas.join(', ')+'). El score se calcula igual pero no habilita nada.</div>';
-  else if(r.estado==='RESTRINGIDO') h+='<div class="alerta">⚠ <b>Restringido</b>: tiene vigente '+r.restricciones_activas.join(', ')+'. El score se muestra, pero la restricción manda.</div>';
+  else if(r.estado==='RESTRINGIDO') h+='<div class="alerta">⚠ <b>Restringido</b>: '+r.restricciones_activas.concat((r.documentos||{}).restringe||[]).join(' · ')+'. El score se muestra, pero la restricción manda.</div>';
   if(r.alertas.length&&r.estado!=='BLOQUEADO'&&r.tope_por_regla==null) h+='<div class="alerta">ℹ Reglas activas sólo como alerta (la conducta ya la mide el score): '+r.alertas.join(', ')+'</div>';
+  var dc=r.documentos||{}, dd=dc.detalle||{};
+  if(dd.licencia!==undefined){
+    var items=[['Licencia (RUNT)',dd.licencia+(dd.runt_consultado?' · consultado '+dd.runt_consultado:'')],['Policía',dd.policia],['SOAT',dd.soat_vence?'vence '+dd.soat_vence:'sin dato'],['Tecnomecánica',dd.tecno_vence?'vence '+dd.tecno_vence:'sin dato']];
+    h+='<div class="sec"><h3>Documentos y habilitación</h3><p class="intro">No dan ni quitan puntos: una condición vencida restringe o alerta según parametros.yaml → documentos.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">'+
+       items.map(function(it){return '<div style="background:#f6f6f8;border-radius:8px;padding:8px 10px"><div style="font-size:11px;color:var(--muted)">'+it[0]+'</div><div>'+it[1]+'</div></div>'}).join('')+'</div>'+
+       (dc.restringe&&dc.restringe.length?'<div class="alerta" style="margin-top:8px">⛔ '+dc.restringe.join('<br>')+'</div>':'')+
+       (dc.alertas&&dc.alertas.length?'<div class="alerta" style="margin-top:8px;background:#fffbe6;border-color:#f0dc8a">⚠ '+dc.alertas.join('<br>')+'</div>':'')+
+       (dc.por_vencer&&dc.por_vencer.length?'<div class="nota" style="margin-top:6px">⏳ '+dc.por_vencer.join(' · ')+'</div>':'')+'</div>';
+  }
   var noap=[], sind=[];
   h+='<div class="sec"><h3>Cómo le fue en la operación (desempeño)</h3><p class="intro">Cada variable da de 0 a 5 puntos; el desempeño es el promedio, donde cada una pesa según su importancia.</p>';
   Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(EVENTOS.indexOf(v)>=0)return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});

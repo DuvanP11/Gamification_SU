@@ -108,6 +108,23 @@ class Recaudo:
 
 
 @dataclass
+class Documentos:
+    """Habilitación documental (RUNT / Policía / SOAT / tecno). None = sin dato."""
+    licencia_estado: str = ""            # p. ej. "ACTIVA"
+    licencia_vence: date | None = None
+    licencia_categorias: str = ""
+    runt_driver_state: int | None = None # 1 = RUNT lo reconoce como conductor
+    runt_mssg: str = ""
+    runt_consultado: date | None = None
+    policia_pendientes: int | None = None
+    policia_consultado: date | None = None
+    policia_recheck_nuevo: int | None = None
+    policia_recheck_fecha: date | None = None
+    soat_vence: date | None = None
+    tecno_vence: date | None = None
+
+
+@dataclass
 class Metricas:
     """Agregados del piloto para UN tipo de servicio en la ventana de tasas.
     None = dato no disponible (≠ 0). Los conteos de reservas / alto valor /
@@ -143,6 +160,7 @@ class Metricas:
     n_res_no_atrib: int | None = None  # informativo: NO entra al denominador
     eventos: list[Evento] = field(default_factory=list)
     recaudos: list[Recaudo] = field(default_factory=list)   # B2B: recaudos con no pago
+    documentos: Documentos | None = None
     reglas_activas: list[str] = field(default_factory=list)
 
     @property
@@ -451,9 +469,61 @@ def observaciones(m: Metricas, subs: dict, vigencia: str, n_min: int, restriccio
         if d["tarde"]:
             obs.append(f"Recaudos pagados después de {int(d['limite_horas'])} h: {d['tarde']} de {d['n']}")
     for a in alertas:
-        if not a.startswith("recaudo_pendiente"):
+        if a.startswith("doc: "):
+            obs.append(a[5:])
+        elif not a.startswith("recaudo_pendiente"):
             obs.append(f"Regla activa: {a}")
     return obs
+
+
+def evaluar_documentos(d: Documentos | None, params: dict, hoy: date) -> dict:
+    """Capa de habilitación: devuelve condiciones que restringen, alertan y
+    avisos de vencimiento próximo. Nunca puntos."""
+    out = {"restringe": [], "alertas": [], "por_vencer": [], "detalle": {}}
+    if d is None:
+        return out
+    cfg = params.get("documentos") or {}
+    pv = int(cfg.get("por_vencer_dias", 30))
+
+    def cond(nombre, txt):
+        efecto = cfg.get(nombre, "alerta")
+        if efecto == "restringe": out["restringe"].append(txt)
+        elif efecto == "alerta": out["alertas"].append(txt)
+
+    def vence(nombre_cond, fecha, rotulo):
+        if fecha is None:
+            return
+        dias = (fecha - hoy).days
+        if dias < 0:
+            cond(nombre_cond, f"{rotulo} vencido/a el {fecha.isoformat()} ({-dias} días)")
+        elif dias <= pv:
+            out["por_vencer"].append(f"{rotulo} vence el {fecha.isoformat()} (en {dias} días)")
+
+    est = (d.licencia_estado or "").upper()
+    if d.runt_mssg and "no se encontr" in d.runt_mssg.lower():
+        cond("licencia_no_encontrada", "RUNT: no se encontró información de licencia")
+    elif est and est != "ACTIVA":
+        cond("licencia_no_activa", f"Licencia en estado {est} según RUNT")
+    vence("licencia_vencida", d.licencia_vence, "Licencia de conducción")
+    if d.runt_driver_state == 0:
+        cond("runt_no_conductor", "RUNT no lo reconoce como conductor (driver_state = false)")
+    if d.policia_pendientes == 1:
+        cond("policia_pendientes", "Policía: TIENE asuntos pendientes con las autoridades")
+    if d.policia_recheck_nuevo == 1:
+        cond("policia_recheck_nuevo", "Recheck de Policía encontró antecedentes nuevos"
+             + (f" ({d.policia_recheck_fecha.isoformat()})" if d.policia_recheck_fecha else ""))
+    vence("soat_vencido", d.soat_vence, "SOAT")
+    vence("tecno_vencida", d.tecno_vence, "Tecnomecánica")
+    out["detalle"] = {
+        "licencia": (est or "sin dato") + (f" · {d.licencia_categorias}" if d.licencia_categorias else "")
+                    + (f" · vence {d.licencia_vence.isoformat()}" if d.licencia_vence else ""),
+        "runt_consultado": d.runt_consultado.isoformat() if d.runt_consultado else None,
+        "policia": {1: "con asuntos pendientes", 0: "sin asuntos pendientes"}.get(d.policia_pendientes, "sin dato")
+                   + (f" · consultado {d.policia_consultado.isoformat()}" if d.policia_consultado else ""),
+        "soat_vence": d.soat_vence.isoformat() if d.soat_vence else None,
+        "tecno_vence": d.tecno_vence.isoformat() if d.tecno_vence else None,
+    }
+    return out
 
 
 def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | None = None) -> dict:
@@ -477,11 +547,13 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
     sc, contrib = score_comportamental(subs, pesos_tipo, g.get("alpha_antecedentes", 1.0), g["score_max"])
 
     reg = aplicar_reglas(sc, m.reglas_activas, reglas.get("reglas", {}))
+    docs = evaluar_documentos(m.documentos, params, hoy) if m.tipo in (params.get("documentos") or {}).get("aplica_a", TIPOS) else evaluar_documentos(None, params, hoy)
+    reg["alertas"].extend("doc: " + a for a in docs["alertas"])
     rc = subs.get("recaudo_24h", {}).get("detalle") or {}
     if rc.get("vencidos_sin_pagar") and params["tasas"]["recaudo_24h"].get("pendiente_alerta", True):
         reg["alertas"].append(f"recaudo_pendiente ({rc['vencidos_sin_pagar']} vencido/s sin pagar)")
     estado = reg["estado"]
-    if restricciones and estado != "BLOQUEADO":
+    if (restricciones or docs["restringe"]) and estado != "BLOQUEADO":
         estado = "RESTRINGIDO"
     if sc is None:
         estado = "SIN_SCORE" if estado == "OK" else estado
@@ -490,6 +562,7 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
         vigencia = "DEFINITIVO" if n >= n_min else "PROVISIONAL"
 
     obs = observaciones(m, subs, vigencia, n_min, restricciones, reg["alertas"], params)
+    obs = docs["restringe"] + obs + docs["por_vencer"]
     d = g["decimales"]
     red = lambda v: None if v is None else round(v + 1e-12, d)
     return {
@@ -506,6 +579,7 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
         "vigencia": vigencia, "confianza": round(confianza, 2),
         "n_aplicables": n, "n_min": n_min,
         "estado": estado, "restricciones_activas": restricciones,
+        "documentos": docs,
         "tope_por_regla": reg["tope"], "alertas": reg["alertas"],
         "sub_scores": {k: ({**v, "score": None if v["score"] is None else round(v["score"], 3)}) for k, v in subs.items()},
         "contribuciones": {k: {kk: (round(vv, 4) if isinstance(vv, float) else vv) for kk, vv in v.items()}

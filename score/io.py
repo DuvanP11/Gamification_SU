@@ -4,7 +4,7 @@ import csv
 from datetime import date, datetime
 from pathlib import Path
 import yaml
-from .engine import Metricas, Evento, Recaudo, EVENTOS
+from .engine import Metricas, Evento, Recaudo, Documentos, EVENTOS
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -61,25 +61,55 @@ def fuentes_de_datos(raiz: Path = RAIZ) -> list[str]:
 
 def cargar_datos(dir_datos: Path) -> list[Metricas]:
     """pilotos.csv (una fila por piloto×tipo) + eventos.csv + reglas_activas.csv."""
+    # eventos*.csv: todos se suman. Si un piloto tiene eventos con `origen=historial`
+    # de un tipo, se descartan los de `origen=flag` (estado sin fecha) del mismo tipo,
+    # para no contar dos veces la misma suspensión vigente.
     eventos: dict[str, list[Evento]] = {}
-    p_ev = dir_datos / "eventos.csv"
-    if p_ev.exists():
+    flags: dict[str, list[Evento]] = {}
+    con_historial: set[tuple[str, str]] = set()
+    for p_ev in sorted(dir_datos.glob("eventos*.csv")):
         with open(p_ev, encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 if r["tipo_evento"] not in EVENTOS:
                     raise ValueError(f"tipo_evento desconocido: {r['tipo_evento']}")
-                sev = r.get("severidad", "").strip()
-                eventos.setdefault(r["piloto_id"], []).append(Evento(
-                    tipo=r["tipo_evento"], fecha=_fecha(r["fecha"]),
-                    activo=(r.get("activo", "0").strip() in ("1", "true", "True")),
-                    severidad=float(sev) if sev else None))
+                sev = (r.get("severidad") or "").strip()
+                ev = Evento(tipo=r["tipo_evento"], fecha=_fecha(r["fecha"]),
+                            activo=((r.get("activo") or "0").strip() in ("1", "true", "True")),
+                            severidad=float(sev) if sev else None)
+                if (r.get("origen") or "").strip() == "flag":
+                    flags.setdefault(r["piloto_id"], []).append(ev)
+                else:
+                    eventos.setdefault(r["piloto_id"], []).append(ev)
+                    if (r.get("origen") or "").strip() == "historial":
+                        con_historial.add((r["piloto_id"], r["tipo_evento"]))
+    for pid, evs in flags.items():
+        for ev in evs:
+            if (pid, ev.tipo) not in con_historial:
+                eventos.setdefault(pid, []).append(ev)
     recaudos: dict[str, list[Recaudo]] = {}
-    p_rc = dir_datos / "recaudos.csv"
-    if p_rc.exists():
+    for p_rc in sorted(dir_datos.glob("recaudos*.csv")):
         with open(p_rc, encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 recaudos.setdefault(r["piloto_id"], []).append(
                     Recaudo(fecha_recaudo=_dt(r["fecha_recaudo"]), fecha_abono=_dt(r.get("fecha_abono"))))
+    documentos: dict[str, Documentos] = {}
+    p_dc = dir_datos / "documentos.csv"
+    if p_dc.exists():
+        with open(p_dc, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                documentos[r["piloto_id"]] = Documentos(
+                    licencia_estado=(r.get("licencia_estado") or "").strip(),
+                    licencia_vence=_fecha_opc(r.get("licencia_vence")),
+                    licencia_categorias=(r.get("licencia_categorias") or "").strip(),
+                    runt_driver_state=_int(r.get("runt_driver_state")),
+                    runt_mssg=(r.get("runt_mssg") or "").strip(),
+                    runt_consultado=_fecha_opc(r.get("runt_consultado")),
+                    policia_pendientes=_int(r.get("policia_pendientes")),
+                    policia_consultado=_fecha_opc(r.get("policia_consultado")),
+                    policia_recheck_nuevo=_int(r.get("policia_recheck_nuevo")),
+                    policia_recheck_fecha=_fecha_opc(r.get("policia_recheck_fecha")),
+                    soat_vence=_fecha_opc(r.get("soat_vence")),
+                    tecno_vence=_fecha_opc(r.get("tecno_vence")))
     reglas: dict[str, list[str]] = {}
     p_rg = dir_datos / "reglas_activas.csv"
     if p_rg.exists():
@@ -103,6 +133,7 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
                 kw[c] = v
             kw["eventos"] = eventos.get(r["piloto_id"], [])
             kw["recaudos"] = recaudos.get(r["piloto_id"], [])
+            kw["documentos"] = documentos.get(r["piloto_id"])
             kw["reglas_activas"] = reglas.get(r["piloto_id"], [])
             out.append(Metricas(**kw))
     return out

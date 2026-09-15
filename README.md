@@ -82,3 +82,14 @@ curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap
 Los CSV reales están en `.gitignore`. Supuestos de la extracción (a confirmar) están
 comentados al inicio de cada `sql/0*.sql`; `sql/00_descubrir_suspensiones.sql` sirve
 para completar el histórico de suspensiones e invitaciones.
+
+### Documentos (RUNT / Policía / SOAT) e historial de suspensiones
+
+```
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/04_documentos.sql -o /Users/pibox/dev/piloto-score/data_real/documentos.csv
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/05_suspensiones.sql -o /Users/pibox/dev/piloto-score/data_real/eventos_suspensiones.csv
+```
+
+`documentos.csv` alimenta la capa de habilitación (no da puntos: restringe/alerta según
+`parametros.yaml → documentos`). `eventos_suspensiones.csv` trae el historial con fecha de
+`driver_suspensions`; el motor descarta el flag sin fecha de `02_eventos` cuando hay historial.

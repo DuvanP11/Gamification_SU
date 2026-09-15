@@ -16,7 +16,7 @@ WITH
     FROM picapmongoprod.passengers
     WHERE _id IN (SELECT piloto_id FROM pil)
     GROUP BY _id)
-SELECT _id AS piloto_id, tipo_evento, toString(today()) AS fecha, 1 AS activo, '' AS severidad
+SELECT _id AS piloto_id, tipo_evento, toString(today()) AS fecha, 1 AS activo, '' AS severidad, 'flag' AS origen
 FROM (
   SELECT _id, 'suspension_piloto'   AS tipo_evento FROM pas WHERE ds IN ('true', '1')
   UNION ALL

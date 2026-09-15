@@ -73,6 +73,13 @@ def explicar(r: dict):
     print(f"score comportamental: {r['score_comportamental']}   score final: {r['score_final']}   banda: {r['banda']}")
     print(f"vigencia: {r['vigencia']} (n={r['n_aplicables']}, n_min={r['n_min']}, confianza={r['confianza']})   estado: {r['estado']}")
     if r["restricciones_activas"]: print(f"restricciones activas: {', '.join(r['restricciones_activas'])}")
+    dc = r.get("documentos") or {}
+    if dc.get("detalle"):
+        d = dc["detalle"]
+        print(f"documentos: licencia {d['licencia']} | policía {d['policia']} | SOAT {d['soat_vence'] or 'sin dato'} | tecno {d['tecno_vence'] or 'sin dato'}")
+        for x in dc["restringe"]: print(f"  ⛔ {x}")
+        for x in dc["alertas"]: print(f"  ⚠ {x}")
+        for x in dc["por_vencer"]: print(f"  ⏳ {x}")
     if r["alertas"]: print(f"reglas: {', '.join(r['alertas'])}" + (f"  → tope {r['tope_por_regla']}" if r["tope_por_regla"] is not None else ""))
     b = r["contribuciones"].get("_bloques")
     if b:

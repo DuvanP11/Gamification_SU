@@ -113,6 +113,23 @@ volumen:
   # n_ref = p95 de finalizados en 90 días (calibrado 2026-09-15): a partir de ahí ya no suma.
   finalizados: { n_ref: { B2B: 125, RENT: 170, B2C: 150 } }
 
+# ---------------------------------------------------------------------------
+# DOCUMENTOS / HABILITACIÓN (RUNT, Policía, SOAT, tecnomecánica). NO dan puntos:
+# cada condición produce `restringe` (estado RESTRINGIDO), `alerta` (se lista) o
+# `ignorar`. `por_vencer_dias` avisa antes del vencimiento.
+# ---------------------------------------------------------------------------
+documentos:
+  por_vencer_dias: 30
+  licencia_vencida:        restringe
+  licencia_no_activa:      restringe   # RUNT dice estado ≠ ACTIVA
+  licencia_no_encontrada:  alerta      # runt_mssg "No se encontró…"
+  runt_no_conductor:       alerta      # user_info.driver_state = false
+  policia_pendientes:      restringe   # "TIENE asuntos pendientes"
+  policia_recheck_nuevo:   alerta      # el último recheck encontró antecedentes nuevos
+  soat_vencido:            restringe
+  tecno_vencida:           alerta
+  aplica_a: [B2B, RENT, B2C]
+
 # Aplicabilidad de cada variable por tipo (matriz del requerimiento).
 aplicabilidad:
   suspension_piloto:     [B2B, RENT, B2C]

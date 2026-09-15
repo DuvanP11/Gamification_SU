@@ -191,3 +191,37 @@ class Casos(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DocumentosTest(unittest.TestCase):
+    def test_documentos_restringen_o_alertan_sin_puntos(self):
+        from score.engine import Documentos
+        base = dict(n_finalizados=100, n_cancel_piloto=5)
+        limpio = ev(Metricas("L", "RENT", **base))
+        ok = ev(Metricas("A", "RENT", documentos=Documentos(licencia_estado="ACTIVA", licencia_vence=date(2030, 1, 1),
+                                                          policia_pendientes=0, soat_vence=date(2027, 1, 1)), **base))
+        self.assertEqual(ok["estado"], "OK"); self.assertEqual(ok["score_final"], limpio["score_final"])
+        venc = ev(Metricas("B", "RENT", documentos=Documentos(licencia_estado="ACTIVA", soat_vence=date(2026, 3, 1)), **base))
+        self.assertEqual(venc["estado"], "RESTRINGIDO"); self.assertEqual(venc["score_final"], limpio["score_final"])  # no toca el score
+        self.assertTrue(any("SOAT vencido" in o for o in venc["observaciones"]))
+        pol = ev(Metricas("C", "RENT", documentos=Documentos(policia_pendientes=1), **base))
+        self.assertEqual(pol["estado"], "RESTRINGIDO")
+        tec = ev(Metricas("D", "RENT", documentos=Documentos(tecno_vence=date(2026, 1, 1)), **base))
+        self.assertEqual(tec["estado"], "OK"); self.assertTrue(any(a.startswith("doc: Tecnomec") for a in tec["alertas"]))
+        pv = ev(Metricas("E", "RENT", documentos=Documentos(soat_vence=date(2026, 10, 1)), **base))
+        self.assertEqual(pv["estado"], "OK"); self.assertTrue(any("SOAT vence" in o for o in pv["observaciones"]))
+        nf = ev(Metricas("F", "RENT", documentos=Documentos(runt_mssg="No se encontró información de licencia en el RUNT."), **base))
+        self.assertEqual(nf["estado"], "OK"); self.assertTrue(any("no se encontró" in a for a in nf["alertas"]))
+
+    def test_flag_se_descarta_si_hay_historial(self):
+        import tempfile, shutil
+        d = Path(tempfile.mkdtemp())
+        try:
+            (d / "pilotos.csv").write_text("piloto_id,nombre,tipo,n_finalizados\nX,X,RENT,50\nY,Y,RENT,50\n")
+            (d / "eventos.csv").write_text("piloto_id,tipo_evento,fecha,activo,severidad,origen\nX,suspension_piloto,2026-09-15,1,,flag\nY,suspension_piloto,2026-09-15,1,,flag\n")
+            (d / "eventos_suspensiones.csv").write_text("piloto_id,tipo_evento,fecha,activo,severidad,origen\nX,suspension_piloto,2026-08-01,1,,historial\n")
+            ms = {m.piloto_id: m for m in cargar_datos(d)}
+            self.assertEqual(len(ms["X"].eventos), 1); self.assertEqual(ms["X"].eventos[0].fecha, date(2026, 8, 1))
+            self.assertEqual(len(ms["Y"].eventos), 1)   # sin historial: el flag se conserva
+        finally:
+            shutil.rmtree(d)
