@@ -22,14 +22,27 @@ docs/generar_ejemplos.py       regenera las tablas de ejemplo del doc con el mot
 
 ```bash
 cd ~/dev/piloto-score
-python3 -m score                        # ranking de todos los pilotos (fecha de corte: hoy)
-python3 -m score --hoy 2026-09-15       # fecha de corte fija (los ejemplos del doc usan esta)
-python3 -m score --tipo RENT            # sólo un tipo
-python3 -m score --explicar P005        # desglose variable por variable
-python3 -m score --json > salida.json   # para Power BI / pruebas
-python3 -m score.web                    # afinador en http://127.0.0.1:8765
-python3 -m unittest discover -s tests   # pruebas
+python3 -m score
+python3 -m score --hoy 2026-09-15
+python3 -m score --tipo RENT
+python3 -m score --explicar P005
+python3 -m score --json > salida.json
+python3 -m score.web
+python3 -m unittest discover -s tests
 ```
+
+| Comando | Qué hace |
+|---|---|
+| `python3 -m score` | ranking de todos los pilotos (fecha de corte: hoy) |
+| `--hoy 2026-09-15` | fecha de corte fija (los ejemplos del doc usan esta) |
+| `--tipo RENT` | sólo un tipo |
+| `--explicar P005` | desglose variable por variable |
+| `--json` | salida para Power BI / pruebas |
+| `python3 -m score.web` | afinador en http://127.0.0.1:8765 (Ctrl+C para cerrarlo) |
+| `python3 -m unittest discover -s tests` | pruebas |
+
+⚠️ En esta terminal zsh los `# comentarios` al final de un comando NO se ignoran: se
+pasan como argumentos. Escribir el comando solo.
 
 Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependencias.
 

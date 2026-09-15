@@ -66,7 +66,9 @@ class H(BaseHTTPRequestHandler):
 
 
 def main():
-    puerto = int(sys.argv[1]) if len(sys.argv) > 1 else PUERTO
+    # Sólo un entero cuenta como puerto; cualquier otra cosa (p. ej. un "#" de
+    # un comentario que la shell no filtró) se ignora.
+    puerto = next((int(a) for a in sys.argv[1:] if a.isdigit()), PUERTO)
     srv = ThreadingHTTPServer(("127.0.0.1", puerto), H)
     url = f"http://127.0.0.1:{puerto}"
     print(f"Afinador de score en {url}  (Ctrl+C para salir)")
