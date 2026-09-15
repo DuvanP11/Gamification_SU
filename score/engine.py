@@ -165,6 +165,12 @@ def _p(params, *ruta, tipo=None):
     return v
 
 
+def _c(cfg: dict, clave: str, tipo: str):
+    """Valor de un parámetro de tasa: escalar o {tipo: valor}."""
+    v = cfg[clave]
+    return v[tipo] if isinstance(v, dict) else v
+
+
 def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
     """Devuelve {variable: {"score": 0–5 | None, "detalle": {...}}} para TODAS
     las variables del modelo; las no aplicables al tipo van con score None y
@@ -205,8 +211,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
     else:
         c = params["tasas"][var]
         cruda = m.n_cancel_piloto / m.n_aplicables
-        adj = tasa_ajustada(m.n_cancel_piloto, m.n_aplicables, c["p0"], c["m"])
-        out[var] = {"score": rampa(adj, c["x_score0"], c["x_score5"], smax),
+        adj = tasa_ajustada(m.n_cancel_piloto, m.n_aplicables, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+        out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                     "detalle": {"x": m.n_cancel_piloto, "n": m.n_aplicables,
                                 "tasa_cruda": round(cruda, 4), "tasa_ajustada": round(adj, 4),
                                 "excluidos_no_atribuibles": m.n_cancel_pasajero + m.n_cancel_plataforma}}
@@ -233,8 +239,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
     else:
         c = params["tasas"][var]
         x, n = m.n_sin_novedad_a_tiempo, m.n_finalizados
-        adj = tasa_ajustada(x, n, c["p0"], c["m"])
-        out[var] = {"score": rampa(adj, c["x_score0"], c["x_score5"], smax),
+        adj = tasa_ajustada(x, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+        out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                     "detalle": {"x": x, "n": n, "tasa_cruda": round(x / n, 4), "tasa_ajustada": round(adj, 4)}}
 
     # 5) Alto valor declarado (mixta: exposición × desempeño)
@@ -247,10 +253,10 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         c = params["tasas"][var]
         n_av, ok = m.n_alto_valor, m.n_alto_valor_ok
         prop = n_av / m.n_finalizados
-        expo = math.sqrt(clip(n_av / c["n_ref"], 0, 1) * clip(prop / c["prop_ref"], 0, 1))
-        adj = tasa_ajustada(ok, n_av, c["p0"], c["m"])
-        s_neutro = rampa(c["p0"], c["x_score0"], c["x_score5"], smax)
-        s_desemp = rampa(adj, c["x_score0"], c["x_score5"], smax)
+        expo = math.sqrt(clip(n_av / _c(c, "n_ref", m.tipo), 0, 1) * clip(prop / _c(c, "prop_ref", m.tipo), 0, 1))
+        adj = tasa_ajustada(ok, n_av, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+        s_neutro = rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
+        s_desemp = rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s = s_neutro + expo * (s_desemp - s_neutro)
         out[var] = {"score": s, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
                                             "exposicion": round(expo, 4), "cumplimiento_ajustado": round(adj, 4),
@@ -266,7 +272,7 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         no(var, "sin_dato")
     else:
         c = params["tasas"][var]
-        lim = float(c["limite_horas"]); fds = bool(c.get("excluir_fin_de_semana", True))
+        lim = float(_c(c, "limite_horas", m.tipo)); fds = bool(c.get("excluir_fin_de_semana", True))
         ahora = datetime(hoy.year, hoy.month, hoy.day, 23, 59, 59)
         a_tiempo = tarde = pendientes = vencidos = 0
         horas_list = []
@@ -286,8 +292,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         if n == 0:
             no(var, "sin_dato")
         else:
-            adj = tasa_ajustada(a_tiempo, n, c["p0"], c["m"])
-            out[var] = {"score": rampa(adj, c["x_score0"], c["x_score5"], smax),
+            adj = tasa_ajustada(a_tiempo, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+            out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                         "detalle": {"episodios": len(m.recaudos), "a_tiempo": a_tiempo, "tarde": tarde,
                                     "vencidos_sin_pagar": vencidos, "pendientes_en_plazo": pendientes - vencidos,
                                     "n": n, "limite_horas": lim, "tasa_cruda": round(a_tiempo / n, 4),
@@ -305,8 +311,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             no(var, "sin_dato")
         else:
             c = params["tasas"][var]
-            adj = tasa_ajustada(cum, n, c["p0"], c["m"])
-            out[var] = {"score": rampa(adj, c["x_score0"], c["x_score5"], smax),
+            adj = tasa_ajustada(cum, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+            out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                         "detalle": {"cumplidas": cum, "incumplidas_atrib": inc, "n": n,
                                     "no_atribuibles_excluidas": m.n_res_no_atrib or 0,
                                     "tasa_cruda": round(cum / n, 4), "tasa_ajustada": round(adj, 4)}}

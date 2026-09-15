@@ -58,12 +58,18 @@ eventos:
 #   m  : pseudo-observaciones (fuerza del prior). Con n = m el dato del piloto
 #        pesa lo mismo que la referencia.
 # ---------------------------------------------------------------------------
+# Los parámetros de tasa aceptan un escalar o un valor por tipo {B2B:, RENT:, B2C:}.
 tasas:
   cancelacion_piloto:
-    p0: 0.08
+    # CALIBRADO 2026-09-15 con 90 días reales (pilotos con ≥20 servicios):
+    #   tasa cancel propia   p20 / p50 / p90   B2B 0.06/0.35/0.86 · RENT 0.19/0.34/0.74 · B2C 0.26/0.42/0.77
+    # p0 = mediana; x_score5 = p20 (mejor quinto → 5); x_score0 = p90 (peor décimo → 0).
+    # ⚠️ Una mediana del 35 % sugiere que status_cd=100 incluye rechazos de asignación,
+    # no sólo abandonos: confirmar con Operaciones antes de dar por buena la escala.
+    p0:       { B2B: 0.35, RENT: 0.34, B2C: 0.42 }
     m: 10
-    x_score0: 0.30      # ≥30 % de cancelación propia → 0
-    x_score5: 0.03      # ≤3 % → 5
+    x_score0: { B2B: 0.86, RENT: 0.74, B2C: 0.77 }
+    x_score5: { B2B: 0.06, RENT: 0.19, B2C: 0.26 }
   sin_novedades:
     p0: 0.90
     m: 10
@@ -104,7 +110,8 @@ tasas:
 # VOLUMEN / EXPERIENCIA (positiva, saturante): sub = 5·min(1, ln(1+n)/ln(1+n_ref))
 # ---------------------------------------------------------------------------
 volumen:
-  finalizados: { n_ref: { B2B: 150, RENT: 200, B2C: 150 } }
+  # n_ref = p95 de finalizados en 90 días (calibrado 2026-09-15): a partir de ahí ya no suma.
+  finalizados: { n_ref: { B2B: 125, RENT: 170, B2C: 150 } }
 
 # Aplicabilidad de cada variable por tipo (matriz del requerimiento).
 aplicabilidad:

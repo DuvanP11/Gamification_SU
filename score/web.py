@@ -13,6 +13,45 @@ from .io import cargar_config, cargar_datos, fuentes_de_datos, RAIZ
 
 PUERTO = 8765
 HTML = (Path(__file__).parent / "web.html").read_text(encoding="utf-8")
+_CACHE: dict = {}   # fuente → (firma mtimes, datos)
+
+CAMPOS_FILA = ("piloto_id", "nombre", "caso", "tipo", "driver_id", "passenger_id", "activado_piloto",
+               "activado_pasajero", "calif_gamification", "gamif_puntos", "gamif_final", "calif_app",
+               "score_comportamental", "score_final", "banda", "vigencia", "confianza", "n_aplicables",
+               "n_min", "estado", "restricciones_activas", "tope_por_regla", "alertas", "observaciones")
+
+
+def datos_cacheados(fuente: str):
+    d = RAIZ / fuente
+    firma = tuple((f.name, f.stat().st_mtime) for f in sorted(d.glob("*.csv")))
+    if _CACHE.get(fuente, (None,))[0] != firma:
+        _CACHE[fuente] = (firma, cargar_datos(d))
+    return _CACHE[fuente][1]
+
+
+def fila(r: dict) -> dict:
+    return {k: r.get(k) for k in CAMPOS_FILA}
+
+
+def ranking(res: list[dict], n: int, solo_definitivos: bool) -> dict:
+    """top n / n del medio / n peores por tipo, más conteos."""
+    out = {}
+    for tipo in TIPOS:
+        rs = [r for r in res if r["tipo"] == tipo]
+        con = [r for r in rs if r["score_final"] is not None and (not solo_definitivos or r["vigencia"] == "DEFINITIVO")]
+        con.sort(key=lambda r: (-r["score_final"], -r["n_aplicables"]))
+        top = con[:n]
+        peores = con[max(n, len(con) - n):] if len(con) > n else []
+        medio, ini = [], 0
+        if len(con) > 2 * n:
+            c = len(con) // 2; ini = max(n, min(c - n // 2, len(con) - 2 * n)); medio = con[ini:ini + n]
+        out[tipo] = {"top": [fila(r) for r in top], "medio": [fila(r) for r in medio], "medio_desde": ini,
+                     "peores": [fila(r) for r in peores], "peores_desde": len(con) - len(peores),
+                     "n_ranking": len(con), "n_total": len(rs),
+                     "n_sin_score": sum(1 for r in rs if r["score_final"] is None),
+                     "n_provisional": sum(1 for r in rs if r["vigencia"] == "PROVISIONAL"),
+                     "bandas": dict(sorted(__import__("collections").Counter(r["banda"] for r in con).items()))}
+    return out
 
 
 class H(BaseHTTPRequestHandler):
@@ -37,7 +76,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}")
-        if self.path == "/api/score":
+        if self.path in ("/api/score", "/api/detalle"):
             try:
                 params = yaml.safe_load(body["parametros_yaml"]) if body.get("parametros_yaml") else cargar_config()[0]
                 pesos, reglas = body["pesos"], cargar_config()[2]
@@ -45,10 +84,16 @@ class H(BaseHTTPRequestHandler):
                 fuente = body.get("datos") or "data"
                 if fuente not in fuentes_de_datos():
                     raise ValueError(f"fuente de datos desconocida: {fuente}")
-                datos = cargar_datos(RAIZ / fuente)
+                datos = datos_cacheados(fuente)
+                if self.path == "/api/detalle":
+                    m = next((m for m in datos if m.piloto_id == body["piloto_id"] and m.tipo == body["tipo"]), None)
+                    if m is None:
+                        raise ValueError("piloto no encontrado")
+                    self._json({"ok": True, "detalle": evaluar(m, params, pesos, reglas, hoy), "parametros": params}); return
                 avisos = {t: validar_pesos(pesos.get(t, {}), params["general"]["max_participacion_peso"]) for t in TIPOS}
                 res = [evaluar(m, params, pesos, reglas, hoy) for m in datos]
-                self._json({"ok": True, "resultados": res, "avisos": avisos, "parametros": params})
+                self._json({"ok": True, "ranking": ranking(res, int(body.get("n") or 10), bool(body.get("solo_definitivos", True))),
+                            "avisos": avisos, "parametros": params, "n_filas": len(res)})
             except Exception as e:
                 self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 400)
             return

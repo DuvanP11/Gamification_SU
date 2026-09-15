@@ -74,9 +74,11 @@ class Casos(unittest.TestCase):
     def test_pocos_servicios_provisional(self):
         r = ev(Metricas("N", "RENT", n_finalizados=3, n_cancel_piloto=1))
         self.assertEqual(r["vigencia"], "PROVISIONAL"); self.assertLess(r["confianza"], 1)
-        # 1 de 4 (25 % crudo) NO se lee como 25 %: el prior lo amortigua
-        self.assertGreater(r["sub_scores"]["cancelacion_piloto"]["detalle"]["tasa_ajustada"], 0.08)
-        self.assertLess(r["sub_scores"]["cancelacion_piloto"]["detalle"]["tasa_ajustada"], 0.25)
+        # 1 de 4 (25 % crudo) NO se lee como 25 %: el prior lo lleva hacia la referencia p0
+        d = r["sub_scores"]["cancelacion_piloto"]["detalle"]
+        p0 = PARAMS["tasas"]["cancelacion_piloto"]["p0"]; p0 = p0["RENT"] if isinstance(p0, dict) else p0
+        lo, hi = sorted([d["tasa_cruda"], p0])
+        self.assertGreater(d["tasa_ajustada"], lo); self.assertLess(d["tasa_ajustada"], hi)
 
     def test_no_aplica_sale_del_calculo(self):
         r = ev(Metricas("R", "RENT", n_finalizados=50))
@@ -175,7 +177,7 @@ class Casos(unittest.TestCase):
         self.assertEqual(ev(Metricas("R", "RENT", recaudos=[Recaudo(vie)], **base))["sub_scores"]["recaudo_24h"]["motivo"], "no_aplica")
 
     def test_observaciones_automaticas(self):
-        r = ev(Metricas("N", "RENT", n_finalizados=3, n_cancel_piloto=2, eventos=[Evento("suspension_piloto", date(2026, 9, 5))]))
+        r = ev(Metricas("N", "RENT", n_finalizados=3, n_cancel_piloto=12, eventos=[Evento("suspension_piloto", date(2026, 9, 5))]))
         txt = " | ".join(r["observaciones"])
         self.assertIn("pocos servicios", txt); self.assertIn("Suspensión como piloto hace 10 días", txt); self.assertIn("Cancelación propia alta", txt)
         self.assertEqual(ev(Metricas("L", "RENT", n_finalizados=200, n_cancel_piloto=2))["observaciones"], [])
