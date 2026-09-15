@@ -65,8 +65,10 @@ small{color:var(--muted)}
 <script>
 var CFG=null, PESOS=null, RANK=null, NFILAS=0, SEL=null, VARS=[], DET={};
 var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','conducta_inapropiada'];
-var POSITIVAS=['finalizados','antiguedad','sin_novedades'];
-function esPenal(v){return POSITIVAS.indexOf(v)<0}
+var BASE=['finalizados','antiguedad'];
+var MIXTAS=['cancelacion_piloto','sin_novedades','recaudo_24h','alto_valor','cumplimiento_reservas'];
+function bloqueDe(v){return BASE.indexOf(v)>=0?'base':MIXTAS.indexOf(v)>=0?'mixta':'negativa'}
+function esPenal(v){return BASE.indexOf(v)<0}
 function $(id){return document.getElementById(id)}
 async function init(){
   CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
@@ -79,10 +81,12 @@ function tipoSel(){return $('tipo').value||'B2B'}
 function renderPesos(){
   var t=tipoSel(), apl=CFG.parametros.aplicabilidad, cont=$('pesos'); cont.innerHTML=''; $('tipoPesos').textContent='('+t+')';
   VARS=Object.keys(apl).filter(function(v){return apl[v].indexOf(t)>=0});
-  var grupos=[['desempeño','Confianza ganada · lo único que suma (0–5)',VARS.filter(function(v){return !esPenal(v)})],
-              ['antecedentes','Penalizaciones · sólo descuentan (portarse bien = 0 %)',VARS.filter(function(v){return esPenal(v)})]];
+  var grupos=[['desempeño','Base ganada · sólo suma (0 → '+(CFG.parametros.general.base_confianza_max||3.5)+')',VARS.filter(function(v){return bloqueDe(v)==='base'})],
+              ['mixtas','Mixtas · suman si está mejor que la referencia, restan si peor',VARS.filter(function(v){return bloqueDe(v)==='mixta'})],
+              ['antecedentes','Negativas · sólo restan',VARS.filter(function(v){return bloqueDe(v)==='negativa'})]];
   grupos.forEach(function(g){
     var h=document.createElement('div'); h.className='grp'+(g[0]==='antecedentes'?' ev':''); h.innerHTML='<span>'+g[1]+'</span><b id="tot-'+g[0]+'"></b>'; cont.appendChild(h);
+    if(!g[2].length){h.style.display='none'}
     g[2].forEach(function(v){ if(PESOS[t][v]===undefined)PESOS[t][v]=0;
       var d=document.createElement('div'); d.className='w'+(g[0]==='antecedentes'?' ev':'');
       d.innerHTML='<span title="'+v+'">'+((NOMBRES[v]||[v])[0])+'</span><input type="range" min="0" max="40" step="1" value="'+PESOS[t][v]+'"><b>'+PESOS[t][v]+'</b><small class="pe" data-v="'+v+'"></small>';
@@ -93,16 +97,16 @@ function renderPesos(){
 }
 // Porcentaje efectivo de cada peso dentro de su bloque (lo que de verdad manda: la proporción, no el número).
 function pesosEfectivos(){
-  var t=tipoSel(), sd=0, sa=0;
-  VARS.forEach(function(v){var w=+PESOS[t][v]||0; if(esPenal(v))sa+=w; else sd+=w});
-  Array.prototype.forEach.call($('pesos').querySelectorAll('.pe'),function(el){var v=el.dataset.v, w=+PESOS[t][v]||0, tot=esPenal(v)?sa:sd; el.textContent=tot?Math.round(w/tot*100)+' %':'—'});
+  var t=tipoSel(), sd=0, sa=0, sm=0, bm=CFG.parametros.general.base_confianza_max||3.5;
+  VARS.forEach(function(v){var w=+PESOS[t][v]||0; var bl=bloqueDe(v); if(bl==='base')sd+=w; else {sa+=w; if(bl==='mixta')sm+=w}});
+  Array.prototype.forEach.call($('pesos').querySelectorAll('.pe'),function(el){var v=el.dataset.v, w=+PESOS[t][v]||0, bl=bloqueDe(v); el.textContent=bl==='base'?(sd?Math.round(w/sd*100)+' %':'—'):bl==='mixta'?('+'+(sm?Math.round(w/sm*100):0)+' % / −'+(sa?Math.round(w/sa*100):0)+' %'):('−'+(sa?Math.round(w/sa*100):0)+' %')});
   var a=+$('alpha').value;
-  $('tot-desempeño').textContent=sd+' pts = 100 %'; $('tot-antecedentes').textContent=sa+' pts = hasta −'+Math.round(a*100)+' %';
+  $('tot-desempeño').textContent=sd+' pts → hasta +'+bm.toFixed(1); var tm=$('tot-mixtas'); if(tm) tm.textContent=sm+' pts → hasta +'+(5-bm).toFixed(1); $('tot-antecedentes').textContent=(sa-sm)+' pts → hasta −'+(a*bm).toFixed(1)+' (junto con lo malo de las mixtas)';
   var maxD=null, maxA=null; VARS.forEach(function(v){var w=+PESOS[t][v]||0; if(esPenal(v)){if(!maxA||w>PESOS[t][maxA])maxA=v}else{if(!maxD||w>PESOS[t][maxD])maxD=v}});
-  var mp=CFG.parametros.general.max_participacion_peso||{}; var lp=typeof mp==='object'?mp.penalizaciones:mp;
-  $('insight').innerHTML='<b>Cómo leer esto.</b> El score = <b>confianza ganada × (1 − penalizaciones)</b>. <b>Confianza ganada</b> es lo único que suma: un promedio de 0 a 5 de experiencia, antigüedad y servicios sin novedad — un piloto recién activado arranca en 0.0 y sube con lo que hace. Hoy la que más pesa es <i>'+(NOMBRES[maxD]||[maxD])[0]+'</i> ('+Math.round((PESOS[t][maxD]||0)/(sd||1)*100)+' %). '+
-    '<b>Penalizaciones</b> nunca suman: cancelar, pagar tarde el recaudo, novedades en alto valor, no asistir a reservas, activación express y los antecedentes descuentan hasta un '+Math.round(a*100)+' % (α) en total; portarse bien vale 0 % de descuento, no puntos. La que más pesa es <i>'+(NOMBRES[maxA]||[maxA])[0]+'</i> ('+Math.round((PESOS[t][maxA]||0)/(sa||1)*100)+' %): "al tope" quita como mucho '+Math.round(a*(PESOS[t][maxA]||0)/(sa||1)*100)+' % del score. '+
-    'Los sliders son relativos dentro de su bloque; ninguna penalización puede pasar del '+Math.round((lp||0.35)*100)+' %.';
+  var mp=CFG.parametros.general.max_participacion_peso||{}; var lp=typeof mp==='object'?mp.comportamiento:mp;
+  $('insight').innerHTML='<b>Cómo leer esto.</b> El score es una <b>cuenta de confianza</b>: <b>base ganada</b> (experiencia y antigüedad, de 0 a '+bm.toFixed(1)+'; un piloto recién activado arranca en 0.0) <b>+</b> lo que hace <b>mejor</b> que la referencia (hasta +'+(5-bm).toFixed(1)+', y se gana en proporción a la evidencia) <b>−</b> lo que hace <b>peor</b> y sus antecedentes (hasta −'+(a*bm).toFixed(1)+'). '+
+    'Las <b>mixtas</b> son la misma variable para las dos cosas: cancelar menos que el promedio suma, cancelar más resta. Las <b>negativas</b> nunca suman. '+
+    'Hoy la base la manda <i>'+(NOMBRES[maxD]||[maxD])[0]+'</i> ('+Math.round((PESOS[t][maxD]||0)/(sd||1)*100)+' %) y en el comportamiento pesa más <i>'+(NOMBRES[maxA]||[maxA])[0]+'</i> ('+Math.round((PESOS[t][maxA]||0)/(sa||1)*100)+' %: "en lo peor" quita como mucho '+(a*bm*(PESOS[t][maxA]||0)/(sa||1)).toFixed(2)+' puntos). Los sliders son relativos dentro de su bloque; ninguna del comportamiento pasa del '+Math.round((lp||0.35)*100)+' %.';
 }
 var tm=null; function recalcDebounced(){clearTimeout(tm);tm=setTimeout(recalc,NFILAS>5000?600:150)}
 function paramsConAlpha(){ // inyecta alpha del slider en el YAML sin reformatearlo
@@ -121,6 +125,8 @@ async function recalc(){
 function fmt(x){return x==null?'—':Number(x).toFixed(1)}
 function fecha(d){return d?d.slice(0,10):'—'}
 function calif(x){return x==null?'—':Number(x).toFixed(1)}
+var CUPO_COL={SIN_CUPO:'#9ca3af',MINIMO:'#ea580c',MEDIO:'#ca8a04',ALTO:'#65a30d',MUY_ALTO:'#15803d',MAXIMO:'#2d1f7a'};
+function cupoCell(c){if(!c)return '—'; return '<span class="pill" style="background:'+(CUPO_COL[c.tramo]||'#9ca3af')+'" title="'+(c.motivos||[]).join(' · ').replace(/"/g,'&quot;')+'">'+c.tramo.replace('_',' ')+'</span><br><small>'+c.texto+'</small>'}
 function idCell(id,rotulo){if(!id)return '<small>'+rotulo+': —</small>';
   return '<span class="idc" data-id="'+id+'" title="Clic para copiar el ID de '+rotulo+'"><small>'+rotulo+'</small> '+id+' <b>⧉</b></span>'}
 function copiarId(el){var id=el.dataset.id, ok=function(){var b=el.querySelector('b'); b.textContent='✓'; setTimeout(function(){b.textContent='⧉'},1200)};
@@ -130,9 +136,9 @@ function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.p
   return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td><td><b>'+r.nombre+'</b><br><small>'+r.piloto_id+' · '+r.tipo+'</small></td>'+
    '<td>'+idCell(r.driver_id||r.piloto_id,'piloto')+(r.passenger_id&&r.passenger_id!==r.driver_id?'<br>'+idCell(r.passenger_id,'pasajero'):'')+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+(r.gamif_final!=null?'nivel '+Math.round(r.gamif_final)+' <small title="total_score_points · new_final_score">('+Math.round(r.gamif_puntos||0).toLocaleString('es-CO')+' pts · '+calif(r.calif_gamification)+')</small>':calif(r.calif_gamification))+'<br>'+calif(r.calif_app)+'</td>'+
    '<td class="num"><b style="font-size:15px">'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<br><small>score '+fmt(r.score_comportamental)+'</small>':'')+'</td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><br><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
-   '<td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
+   '<td>'+cupoCell(r.cupo)+'</td><td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
 function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
-  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID</th><th>Activación piloto<br>Activación pasajero</th><th class="num">Gamification (nivel)<br>App</th><th class="num">Score</th><th>Banda</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
+  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID</th><th>Activación piloto<br>Activación pasajero</th><th class="num">Gamification (nivel)<br>App</th><th class="num">Score</th><th>Banda</th><th title="Cupo de confianza: cuánto valor declarado / recaudo se le puede confiar">Cupo COP</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
 function renderTabla(){
   if(!RANK) return; var t=$('tipo').value, tipos=t?[t]:['B2B','RENT','B2C'], h='', info=[];
   tipos.forEach(function(tp){var k=RANK[tp]; if(!k) return;
@@ -151,7 +157,7 @@ function renderTabla(){
   marcarSel();
 }
 function marcarSel(){Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.className=tr.dataset.k===SEL?'sel':''})}
-var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],conducta_inapropiada:['Conducta inapropiada confirmada','antecedente'],cancelacion_piloto:['Cancelaciones propias','penalización'],finalizados:['Experiencia (servicios finalizados)','positiva'],antiguedad:['Antigüedad como piloto','positiva'],activacion_express:['Activación express','penalización'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
+var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],conducta_inapropiada:['Conducta inapropiada confirmada','antecedente'],cancelacion_piloto:['Cancelaciones propias','mixta'],finalizados:['Experiencia (servicios finalizados)','base'],antiguedad:['Antigüedad como piloto','base'],activacion_express:['Activación express','negativa'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
 var PARAMS=null;
 function pct(x,d){return (x*100).toFixed(d==null?0:d).replace('.',',')+' %'}
 function dias(n){if(n>=365){var a=n/365;return a%1<0.1?Math.round(a)+(Math.round(a)===1?' año':' años'):a.toFixed(1).replace('.',',')+' años'}return n>=60?Math.round(n/30)+' meses':n+' días'}
@@ -174,31 +180,33 @@ function explicar(v,s,r){
     return {que:'Entró por <b>activación express</b> hace '+d.dias_desde_activacion+' días.',como:'Descuenta completo el día de la activación y se apaga a la mitad cada '+dias(c.semivida_dias)+' (hoy pesa '+d.carga+' de '+d.tope+').'};}
   if(v==='cancelacion_piloto'){var c=P.tasas[v];
     return {que:'Canceló <b>'+d.x+' de '+d.n+'</b> servicios que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.excluidos_no_atribuibles?'No se le cuentan '+d.excluidos_no_atribuibles+' cancelados por el pasajero o la plataforma.':''),
-            como:'Ajustado por volumen queda en '+pct(d.tasa_ajustada,1)+'. Hasta '+pct(pt(c,'x_score5'))+' no descuenta; desde '+pct(pt(c,'x_score0'))+' descuenta completo.'};}
+            como:'Ajustado por volumen queda en '+pct(d.tasa_ajustada,1)+'. La referencia de su tipo es '+pct(d.referencia_p0)+': por debajo suma, por encima resta ('+pct(pt(c,'x_score5'))+' = lo mejor, '+pct(pt(c,'x_score0'))+' = lo peor).'};}
   if(v==='finalizados'){
     return {que:'<b>'+d.n+'</b> servicios finalizados en la ventana'+(d.tasa_finalizacion!=null?' (terminó el '+pct(d.tasa_finalizacion)+' de los que dependían de él)':'')+'.',
             como:'La experiencia suma rápido al principio y se llena a los '+d.n_ref+' servicios; de ahí en adelante no da más puntos.'};}
   if(v==='sin_novedades'){var c=P.tasas[v];
     return {que:'<b>'+d.x+' de '+d.n+'</b> servicios finalizados salieron sin novedad y a tiempo ('+pct(d.tasa_cruda,1)+').',
-            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. '+pct(c.x_score5)+' o más = 5 puntos; '+pct(c.x_score0)+' o menos = 0.'};}
+            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. Referencia '+pct(d.referencia_p0)+': por encima suma, por debajo resta ('+pct(c.x_score5)+' = lo mejor, '+pct(c.x_score0)+' = lo peor).'};}
   if(v==='alto_valor'){var c=P.tasas[v], ex=d.exposicion, nivel=ex>=0.8?'alta':ex>=0.4?'media':'baja';
     return {que:'<b>'+d.n_alto_valor+'</b> servicios de alto valor ('+pct(d.proporcion)+' de sus servicios), <b>'+d.ok+'</b> sin novedad.',
-            como:'Sólo descuenta si hay novedades: cumplimiento ajustado '+pct(d.cumplimiento_ajustado,1)+' (sin descuento desde '+pct(c.x_score5)+'). El descuento se aplica en proporción a la exposición '+nivel+' ('+ex.toFixed(2)+' de 1: se necesitan '+c.n_ref+' servicios de alto valor y que sean el '+pct(c.prop_ref)+' del total).'};}
+            como:'Cumplimiento ajustado '+pct(d.cumplimiento_ajustado,1)+' frente a la referencia '+pct(c.p0)+': por encima suma, por debajo resta, siempre en proporción a la exposición '+nivel+' ('+ex.toFixed(2)+' de 1: se necesitan '+c.n_ref+' servicios de alto valor y que sean el '+pct(c.prop_ref)+' del total). Hacer servicios caros no suma por sí solo.'};}
   if(v==='recaudo_24h'){var c=P.tasas[v];
     var extra=[]; if(d.vencidos_sin_pagar) extra.push('<b>'+d.vencidos_sin_pagar+' vencido'+(d.vencidos_sin_pagar>1?'s':'')+' sin pagar</b>'); if(d.pendientes_en_plazo) extra.push(d.pendientes_en_plazo+' pendiente'+(d.pendientes_en_plazo>1?'s':'')+' todavía en plazo (no cuenta)');
     return {que:'Tuvo <b>'+d.episodios+'</b> recaudo'+(d.episodios>1?'s':'')+' sin abonar en el momento; pagó <b>'+d.a_tiempo+' de '+d.n+'</b> dentro de '+d.limite_horas+' h hábiles'+(d.tarde?', '+d.tarde+' tarde':'')+(extra.length?'; '+extra.join(', '):'')+'.',
-            como:'Las horas corren de lunes a viernes (sábado y domingo no cuentan). Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. Con '+pct(c.x_score5)+' o más a tiempo no descuenta; con '+pct(c.x_score0)+' o menos descuenta completo.'};}
+            como:'Las horas corren de lunes a viernes (sábado y domingo no cuentan). Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. Referencia '+pct(d.referencia_p0)+': por encima suma, por debajo resta.'};}
   if(v==='cumplimiento_reservas'){var c=P.tasas[v];
     return {que:'Cumplió <b>'+d.cumplidas+' de '+d.n+'</b> reservas que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.no_atribuibles_excluidas?d.no_atribuibles_excluidas+' con causa ajena no se cuentan.':''),
-            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. Con '+pct(c.x_score5)+' o más cumplidas no descuenta; con '+pct(c.x_score0)+' o menos descuenta completo.'};}
+            como:'Ajustado por volumen: '+pct(d.tasa_ajustada,1)+'. Referencia '+pct(d.referencia_p0)+': por encima suma, por debajo resta.'};}
   return {que:'',como:''};
 }
 function colorSub(x){return x>=4?'#16a34a':x>=3?'#65a30d':x>=2?'#ca8a04':x>=1?'#ea580c':'#dc2626'}
 function filaHTML(v,s,c,r){
   var e=explicar(v,s,r), sub=s.score, esAnt=esPenal(v), ef;
   if(!c) ef='<div class="ef cero">Peso 0: no influye</div>';
-  else if(esAnt) ef=c.descuento>0.0005?'<div class="ef neg"><b>−'+pct(c.descuento,1)+'</b> del score<br><small>pesa '+pct(c.peso_efectivo)+' de las penalizaciones: podría descontar hasta '+pct(c.peso_efectivo)+'</small></div>':'<div class="ef cero">No descuenta<br><small>pesa '+pct(c.peso_efectivo)+' de las penalizaciones</small></div>';
-  else ef='<div class="ef pos"><b>+'+c.aporte.toFixed(2)+'</b> a la base<br><small>pesa '+pct(c.peso_efectivo)+' de la confianza ganada (máx. +'+(c.peso_efectivo*5).toFixed(2)+')</small></div>';
+  else if(c.bloque==='base') ef='<div class="ef pos"><b>+'+c.aporte.toFixed(2)+'</b> a la base<br><small>pesa '+pct(c.peso_efectivo)+' de la base (máx. +'+(c.peso_efectivo*(r.contribuciones._bloques.base_max||3.5)).toFixed(2)+')</small></div>';
+  else if(c.aporte>0.0005) ef='<div class="ef pos"><b>+'+c.aporte.toFixed(2)+'</b> puntos<br><small>mejor que la referencia (balance +'+(c.balance*100).toFixed(0)+' %); podría sumar hasta +'+c.max_ganancia.toFixed(2)+'</small></div>';
+  else if(c.aporte<-0.0005) ef='<div class="ef neg"><b>'+c.aporte.toFixed(2)+'</b> puntos<br><small>'+(c.bloque==='mixta'?'peor que la referencia (balance '+(c.balance*100).toFixed(0)+' %)':'antecedente')+'; podría restar hasta −'+c.max_perdida.toFixed(2)+'</small></div>';
+  else ef='<div class="ef cero">'+(c.bloque==='mixta'?'Igual que la referencia: 0':'No resta')+'<br><small>podría '+(c.bloque==='mixta'?'sumar hasta +'+c.max_ganancia.toFixed(2)+' o ':'')+'restar hasta −'+c.max_perdida.toFixed(2)+'</small></div>';
   return '<div class="fila"><div class="nom">'+NOMBRES[v][0]+'<small>'+v+'</small></div><div class="que">'+e.que+'<br><small>'+e.como+'</small></div>'+
     '<div><div class="barra"><i style="width:'+(sub/5*100)+'%;background:'+colorSub(sub)+'"></i></div><div class="pts"><b>'+sub.toFixed(2)+'</b> de 5 puntos</div></div>'+ef+'</div>';
 }
@@ -209,12 +217,16 @@ async function renderDetalle(k){
   var r=d.detalle; PARAMS=d.parametros; var b=r.contribuciones._bloques;
   var h='<h2>Desglose · '+r.piloto_id+' '+r.nombre+' · '+r.tipo+'</h2>';
   if(!b){$('detalle').innerHTML=h+'<div class="alerta">Sin score: no tiene servicios en la ventana sobre los que evaluar el desempeño.</div>';return}
-  var sc=b.D_base*b.factor;
-  h+='<div class="resumen"><div class="paso"><div class="k">1 · Confianza ganada</div><div class="v">'+b.D_base.toFixed(2)+' <small>/ 5</small></div><div class="t">'+(b.nota?'piloto nuevo sin servicios: arranca en 0':'experiencia, antigüedad y servicios sin novedad')+'</div></div><div class="flecha">→</div>'+
-     '<div class="paso"><div class="k">2 · Penalizaciones</div><div class="v">−'+pct(b.P_penal*b.alpha,1)+'</div><div class="t">'+(b.P_penal>0?'descuento por lo que hizo mal + antecedentes':'nada que descontar')+'</div></div><div class="flecha">→</div>'+
-     '<div class="paso"><div class="k">3 · Score</div><div class="v">'+sc.toFixed(2)+'</div><div class="t">'+b.D_base.toFixed(2)+' × (1 − '+pct(b.P_penal*b.alpha,1)+')</div></div>'+
-     (r.tope_por_regla!=null?'<div class="flecha">→</div><div class="paso"><div class="k">4 · Regla</div><div class="v">tope '+r.tope_por_regla.toFixed(1)+'</div><div class="t">'+r.alertas.join(', ')+'</div></div>':'')+
+  var sc=Math.max(0,Math.min(5,b.nota?0:b.score_sin_clip));
+  h+='<div class="resumen"><div class="paso"><div class="k">1 · Base ganada</div><div class="v">'+b.A_base.toFixed(2)+' <small>/ '+b.base_max.toFixed(1)+'</small></div><div class="t">'+(b.nota?'piloto nuevo sin servicios: arranca en 0':'experiencia y antigüedad como piloto')+'</div></div><div class="flecha">+</div>'+
+     '<div class="paso"><div class="k">2 · Mejor que la referencia</div><div class="v">+'+(b.ganancia||0).toFixed(2)+'</div><div class="t">'+(b.confianza<1?'ganado al '+Math.round(b.confianza*100)+' % (poca evidencia)':'lo que hace mejor que el promedio')+'</div></div><div class="flecha">−</div>'+
+     '<div class="paso"><div class="k">3 · Peor + antecedentes</div><div class="v">−'+(b.perdida||0).toFixed(2)+'</div><div class="t">'+(b.perdida>0?'lo que hace peor y su historial':'nada que restar')+'</div></div><div class="flecha">=</div>'+
+     '<div class="paso"><div class="k">4 · Score</div><div class="v">'+sc.toFixed(2)+'</div><div class="t">'+b.A_base.toFixed(2)+' + '+(b.ganancia||0).toFixed(2)+' − '+(b.perdida||0).toFixed(2)+(b.score_sin_clip>5||b.score_sin_clip<0?' (recortado a 0–5)':'')+'</div></div>'+
+     (r.tope_por_regla!=null?'<div class="flecha">→</div><div class="paso"><div class="k">5 · Regla</div><div class="v">tope '+r.tope_por_regla.toFixed(1)+'</div><div class="t">'+r.alertas.join(', ')+'</div></div>':'')+
      '<div class="flecha">=</div><div class="paso final"><div class="k">Score final</div><div class="v">'+fmt(r.score_final)+' <small>'+(r.banda||'')+'</small></div><div class="t">'+(r.vigencia==='DEFINITIVO'?'definitivo: '+r.n_aplicables+' servicios (mín. '+r.n_min+')':'PROVISIONAL: sólo '+r.n_aplicables+' servicios de los '+r.n_min+' necesarios')+'</div></div></div>';
+  if(r.cupo){var cp=r.cupo; h+='<div class="sec" style="margin-top:6px"><h3>Cupo de confianza en plata <small>(qué monto se le puede confiar en valor declarado o contra entrega)</small></h3>'+
+    '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="pill" style="background:'+(CUPO_COL[cp.tramo]||'#9ca3af')+';font-size:13px;padding:4px 10px">'+cp.tramo.replace('_',' ')+'</span><b style="font-size:16px">'+cp.texto+(cp.moneda?' '+cp.moneda:'')+'</b></div>'+
+    '<div class="nota">Cómo se llegó: '+(cp.motivos||[]).join(' → ')+'.</div></div>';}
   if(r.estado==='BLOQUEADO') h+='<div class="alerta">⛔ <b>Bloqueado por regla de riesgo</b> ('+r.alertas.join(', ')+'). El score se calcula igual pero no habilita nada.</div>';
   else if(r.estado==='RESTRINGIDO') h+='<div class="alerta">⚠ <b>Restringido</b>: '+r.restricciones_activas.concat((r.documentos||{}).restringe||[]).join(' · ')+'. El score se muestra, pero la restricción manda.</div>';
   if(r.alertas.length&&r.estado!=='BLOQUEADO'&&r.tope_por_regla==null) h+='<div class="alerta">ℹ Reglas activas sólo como alerta (la conducta ya la mide el score): '+r.alertas.join(', ')+'</div>';
@@ -228,10 +240,12 @@ async function renderDetalle(k){
        (dc.por_vencer&&dc.por_vencer.length?'<div class="nota" style="margin-top:6px">⏳ '+dc.por_vencer.join(' · ')+'</div>':'')+'</div>';
   }
   var noap=[], sind=[];
-  h+='<div class="sec"><h3>Lo que suma: confianza ganada</h3><p class="intro">Cada variable da de 0 a 5 puntos y la base es su promedio ponderado. Un piloto recién activado arranca en 0 y va subiendo.</p>';
-  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(esPenal(v))return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
-  h+='</div><div class="sec"><h3>Lo que descuenta: penalizaciones</h3><p class="intro">Portarse bien vale 0 % de descuento, nunca puntos. Cada penalización descuenta un porcentaje del score y las de historial pierden peso con el tiempo.</p>';
-  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(!esPenal(v))return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
+  h+='<div class="sec"><h3>Base ganada (sólo suma)</h3><p class="intro">Experiencia y antigüedad: la confianza que se gana con el tiempo, hasta '+b.base_max.toFixed(1)+'. Un piloto recién activado arranca en 0 y va subiendo.</p>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='base')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
+  h+='</div><div class="sec"><h3>Comportamiento (suma o resta según la referencia)</h3><p class="intro">La misma variable suma si el piloto está mejor que el promedio de su tipo y resta si está peor. Igual que el promedio = 0.</p>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='mixta')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
+  h+='</div><div class="sec"><h3>Antecedentes y activación (sólo restan)</h3><p class="intro">Un historial limpio no suma: sólo resta cuando hay eventos, y cada evento pierde peso con el tiempo.</p>';
+  Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='negativa')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
   h+='</div>';
   if(noap.length) h+='<div class="nota">No aplican en '+r.tipo+' (fuera del cálculo, no cuentan como 0): '+noap.join(', ')+'.</div>';
   if(sind.length) h+='<div class="nota">Sin dato para evaluar (fuera del cálculo): '+sind.join(', ')+'.</div>';

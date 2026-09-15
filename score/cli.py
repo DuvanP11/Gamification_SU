@@ -50,12 +50,12 @@ def main(argv=None):
                                    (f"{N} PEORES", con[max(N, len(con) - N):] if len(con) > N else [], max(N, len(con) - N))):
             if not grupo: continue
             print(f"\n── {titulo} ──")
-            print(f"{'#':>3} {'nombre':24} {'tipo':5} {'id piloto':24} {'id pasajero':24} {'act.piloto':10} {'act.pasaj.':10} {'gamif':>5} {'app':>4} {'final':>5} {'banda':12}  observaciones")
+            print(f"{'#':>3} {'nombre':24} {'tipo':5} {'id piloto':24} {'id pasajero':24} {'act.piloto':10} {'act.pasaj.':10} {'gamif':>5} {'app':>4} {'final':>5} {'banda':12} {'cupo':9}  observaciones")
             for i, r in enumerate(grupo):
                 obs = "; ".join(r["observaciones"]) or "—"
                 g = "—" if r["calif_gamification"] is None else f"{r['calif_gamification']:.1f}"
                 ap_ = "—" if r["calif_app"] is None else f"{r['calif_app']:.1f}"
-                print(f"{off+i+1:>3} {r['nombre'][:24]:24} {r['tipo']:5} {r['driver_id']:24} {r['passenger_id']:24} {(r['activado_piloto'] or '—'):10} {(r['activado_pasajero'] or '—'):10} {g:>5} {ap_:>4} {r['score_final']:>5.1f} {r['banda'][:12]:12}  {obs}")
+                print(f"{off+i+1:>3} {r['nombre'][:24]:24} {r['tipo']:5} {r['driver_id']:24} {r['passenger_id']:24} {(r['activado_piloto'] or '—'):10} {(r['activado_pasajero'] or '—'):10} {g:>5} {ap_:>4} {r['score_final']:>5.1f} {r['banda'][:12]:12} {r['cupo']['tramo']:9}  {obs}")
         return
     print(f"{'piloto':8} {'tipo':5} {'nombre':22} {'score':>5} {'final':>5} {'banda':22} {'vig.':12} {'conf':>4} {'n':>4}  estado / alertas / observaciones")
     for r in res:
@@ -73,6 +73,8 @@ def explicar(r: dict):
     print(f"score comportamental: {r['score_comportamental']}   score final: {r['score_final']}   banda: {r['banda']}")
     print(f"vigencia: {r['vigencia']} (n={r['n_aplicables']}, n_min={r['n_min']}, confianza={r['confianza']})   estado: {r['estado']}")
     if r["restricciones_activas"]: print(f"restricciones activas: {', '.join(r['restricciones_activas'])}")
+    cp = r.get("cupo")
+    if cp: print(f"cupo de confianza: {cp['tramo']} ({cp['texto']} {cp.get('moneda','')})  ← {' → '.join(cp['motivos'])}")
     dc = r.get("documentos") or {}
     if dc.get("detalle"):
         d = dc["detalle"]
@@ -83,8 +85,8 @@ def explicar(r: dict):
     if r["alertas"]: print(f"reglas: {', '.join(r['alertas'])}" + (f"  → tope {r['tope_por_regla']}" if r["tope_por_regla"] is not None else ""))
     b = r["contribuciones"].get("_bloques")
     if b:
-        print(f"D (confianza ganada) = {b['D_base']:.3f}   P (penalizaciones) = {b['P_penal']:.3f}   "
-              f"factor = 1 − {b['alpha']}·P = {b['factor']:.3f}   →  D·factor = {b['D_base']*b['factor']:.3f}")
+        print(f"base ganada = {b['A_base']:.3f} (máx {b['base_max']})   + mejor que la referencia = {b.get('ganancia',0):.3f}"
+              f" (evidencia {b.get('confianza',1):.0%})   − peor + antecedentes = {b.get('perdida',0):.3f}   →  {b.get('score_sin_clip',0):.3f}")
     print(f"\n{'variable':24} {'bloque':13} {'sub':>6} {'peso ef.':>9} {'aporte/desc.':>12}  detalle")
     for var, s in r["sub_scores"].items():
         c = r["contribuciones"].get(var)
@@ -94,5 +96,5 @@ def explicar(r: dict):
         if not c:
             print(f"{var:24} {'(peso 0)':13} {s['score']:>6.2f} {'0%':>9} {'0':>12}  {det}"); continue
         pe = f"{c['peso_efectivo']:.1%}"
-        ap = f"+{c['aporte']:.2f}" if c["bloque"] == "positiva" else f"−{c['descuento']:.1%}"
+        ap = f"{c['aporte']:+.2f}"
         print(f"{var:24} {c['bloque']:13} {s['score']:>6.2f} {pe:>9} {ap:>12}  {det}")

@@ -91,8 +91,9 @@ class Casos(unittest.TestCase):
     def test_historial_limpio_no_suma(self):
         base = dict(n_finalizados=50, n_cancel_piloto=5, n_cancel_pasajero=30)
         limpio = ev(Metricas("A", "RENT", **base))
-        self.assertEqual(limpio["contribuciones"]["_bloques"]["P_penal"], 0.0)
-        self.assertAlmostEqual(limpio["score_final"], round(limpio["contribuciones"]["_bloques"]["D_base"], 1))
+        b = limpio["contribuciones"]["_bloques"]
+        self.assertEqual(b["B_menos"], 0.0)
+        self.assertAlmostEqual(limpio["score_final"], round(min(5.0, b["A_base"] + b["ganancia"]), 1))
 
     def test_suspension_vieja_vs_reciente(self):
         base = dict(n_finalizados=200, n_cancel_piloto=4)
@@ -193,30 +194,30 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class BloquesV03(unittest.TestCase):
-    """v0.3: cancelar/recaudo/alto valor/reservas sólo descuentan; el piloto nuevo arranca en 0."""
-    def test_portarse_bien_no_suma(self):
-        base = dict(n_finalizados=100, n_cancel_piloto=0, n_sin_novedad_a_tiempo=100, dias_antiguedad=400)
-        a = ev(Metricas("A", "B2B", **base))
-        # con datos perfectos en las penalizaciones el score es EXACTAMENTE la base positiva
-        self.assertEqual(a["contribuciones"]["_bloques"]["P_penal"], 0.0)
-        self.assertEqual(a["score_final"], round(a["contribuciones"]["_bloques"]["D_base"], 1))
-        # y agregar reservas / recaudos / alto valor perfectos NO lo sube
-        from score.engine import Recaudo
-        b = ev(Metricas("B", "B2B", n_res_cumplidas=30, n_res_incumplidas_atrib=0, n_alto_valor=30, n_alto_valor_ok=30,
-                        recaudos=[Recaudo(datetime(2026, 9, 8, 9), datetime(2026, 9, 8, 12))], **base))
-        self.assertEqual(b["score_final"], a["score_final"])
-        for v in ("cancelacion_piloto", "cumplimiento_reservas", "alto_valor", "recaudo_24h"):
-            self.assertEqual(b["contribuciones"][v]["bloque"], "penalizacion"); self.assertEqual(b["contribuciones"][v]["descuento"], 0.0)
+class BloquesV04(unittest.TestCase):
+    """v0.4: base (experiencia+antigüedad) + mixtas que suman o restan + negativas; el nuevo arranca en 0."""
+    def test_mixta_suma_o_resta_segun_la_referencia(self):
+        base = dict(dias_antiguedad=400, n_finalizados=100)
+        ref = ev(Metricas("R", "RENT", n_cancel_piloto=int(100 * 0.34 / 0.66), **base))   # ≈ mediana RENT (34 %)
+        mejor = ev(Metricas("M", "RENT", n_cancel_piloto=0, **base))
+        peor = ev(Metricas("P", "RENT", n_cancel_piloto=150, **base))
+        self.assertGreater(mejor["contribuciones"]["cancelacion_piloto"]["aporte"], 0)
+        self.assertLess(peor["contribuciones"]["cancelacion_piloto"]["aporte"], 0)
+        self.assertAlmostEqual(ref["contribuciones"]["cancelacion_piloto"]["aporte"], 0, delta=0.05)
+        self.assertGreater(mejor["score_final"], ref["score_final"]); self.assertLess(peor["score_final"], ref["score_final"])
+        # igual que la referencia → el score es la base ganada
+        self.assertAlmostEqual(ref["score_final"], round(ref["contribuciones"]["_bloques"]["A_base"], 1), delta=0.1)
 
-    def test_penalizaciones_bajan(self):
+    def test_las_demas_mixtas_tambien(self):
         from score.engine import Recaudo
-        base = dict(n_finalizados=100, n_sin_novedad_a_tiempo=100, dias_antiguedad=400)
-        ok = ev(Metricas("A", "B2B", n_cancel_piloto=0, **base))["score_final"]
-        self.assertLess(ev(Metricas("B", "B2B", n_cancel_piloto=90, **base))["score_final"], ok)                                   # cancela
-        self.assertLess(ev(Metricas("C", "B2B", n_res_cumplidas=5, n_res_incumplidas_atrib=10, **base))["score_final"], ok)        # no asiste a reservas
-        self.assertLess(ev(Metricas("D", "B2B", n_alto_valor=30, n_alto_valor_ok=10, **base))["score_final"], ok)                  # novedades en alto valor
-        self.assertLess(ev(Metricas("E", "B2B", recaudos=[Recaudo(datetime(2026, 9, 1, 9), datetime(2026, 9, 8, 9))], **base))["score_final"], ok)  # recaudo tarde
+        base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5)
+        ok = ev(Metricas("A", "B2B", n_sin_novedad_a_tiempo=100, n_res_cumplidas=30, n_res_incumplidas_atrib=0, n_alto_valor=30, n_alto_valor_ok=30,
+                         recaudos=[Recaudo(datetime(2026, 9, 8, 9), datetime(2026, 9, 8, 12))] * 5, **base))
+        mal = ev(Metricas("B", "B2B", n_sin_novedad_a_tiempo=60, n_res_cumplidas=5, n_res_incumplidas_atrib=10, n_alto_valor=30, n_alto_valor_ok=10,
+                          recaudos=[Recaudo(datetime(2026, 9, 1, 9), datetime(2026, 9, 8, 9))] * 5, **base))
+        for v in ("sin_novedades", "cumplimiento_reservas", "alto_valor", "recaudo_24h"):
+            self.assertGreater(ok["contribuciones"][v]["aporte"], 0, v); self.assertLess(mal["contribuciones"][v]["aporte"], 0, v)
+        self.assertGreater(ok["score_final"], mal["score_final"])
 
     def test_piloto_nuevo_arranca_en_cero_y_sube(self):
         nuevo0 = ev(Metricas("N0", "RENT", activado_piloto=date(2026, 9, 14)))
@@ -226,8 +227,8 @@ class BloquesV03(unittest.TestCase):
         n2 = ev(Metricas("N2", "RENT", activado_piloto=date(2026, 8, 20), n_finalizados=40, n_cancel_piloto=0))
         vet = ev(Metricas("V", "RENT", activado_piloto=date(2024, 1, 1), n_finalizados=200, n_cancel_piloto=0))
         self.assertGreater(n1["score_final"], 0.0); self.assertGreater(n2["score_final"], n1["score_final"]); self.assertGreater(vet["score_final"], n2["score_final"])
-        # veterano sin servicios en la ventana: inactivo, no 0.0
-        self.assertIsNone(ev(Metricas("I", "RENT", activado_piloto=date(2024, 1, 1)))["score_final"])
+        self.assertLessEqual(n1["score_final"], 5 - PARAMS["general"]["base_confianza_max"] + 0.5)   # sin base ganada no puede volar
+        self.assertIsNone(ev(Metricas("I", "RENT", activado_piloto=date(2024, 1, 1)))["score_final"])   # veterano inactivo
 
     def test_activacion_express_penaliza_y_se_apaga(self):
         base = dict(n_finalizados=60, n_cancel_piloto=0)
@@ -235,8 +236,13 @@ class BloquesV03(unittest.TestCase):
         express = ev(Metricas("B", "RENT", activado_piloto=date(2026, 9, 1), activacion_express=1, **base))
         vieja = ev(Metricas("C", "RENT", activado_piloto=date(2024, 9, 1), activacion_express=1, **base))
         self.assertLess(express["score_final"], normal["score_final"])
-        self.assertGreater(express["contribuciones"]["activacion_express"]["descuento"], vieja["contribuciones"]["activacion_express"]["descuento"])
+        self.assertLess(express["contribuciones"]["activacion_express"]["aporte"], vieja["contribuciones"]["activacion_express"]["aporte"])
         self.assertTrue(any("EXPRESS" in o for o in express["observaciones"]))
+
+    def test_negativas_nunca_suman(self):
+        r = ev(Metricas("L", "RENT", dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5))
+        for v in ("suspension_piloto", "expulsion", "conducta_inapropiada"):
+            self.assertEqual(r["contribuciones"][v]["aporte"], 0.0)
 
 
 class DocumentosTest(unittest.TestCase):
@@ -281,12 +287,12 @@ class ConductaTest(unittest.TestCase):
             uno = ev(Metricas("1", tipo, eventos=[Evento("conducta_inapropiada", HOY, subtipo="ABUSIVE_LANGUAGE")], **base))
             cinco = ev(Metricas("5", tipo, eventos=[Evento("conducta_inapropiada", HOY)] * 5, **base))
             viejo = ev(Metricas("V", tipo, eventos=[Evento("conducta_inapropiada", date(2025, 3, 15))], **base))
-            self.assertLess(uno["score_final"], limpio["score_final"], tipo)
-            # moderado: un caso de hoy quita menos del 5 % del score
-            self.assertGreater(uno["score_final"], limpio["score_final"] * 0.95, tipo)
+            self.assertLess(uno["contribuciones"]["_bloques"]["score_sin_clip"], limpio["contribuciones"]["_bloques"]["score_sin_clip"], tipo)
+            # moderado: un caso de hoy quita menos de 0.25 puntos
+            self.assertGreater(uno["contribuciones"]["_bloques"]["score_sin_clip"], limpio["contribuciones"]["_bloques"]["score_sin_clip"] - 0.25, tipo)
             self.assertLess(cinco["score_final"], uno["score_final"], tipo)
             self.assertEqual(cinco["sub_scores"]["conducta_inapropiada"]["score"], 0.0, tipo)
-            self.assertGreater(viejo["score_final"], uno["score_final"], tipo)   # decae con el tiempo
+            self.assertGreater(viejo["contribuciones"]["_bloques"]["score_sin_clip"], uno["contribuciones"]["_bloques"]["score_sin_clip"], tipo)   # decae
             self.assertEqual(uno["estado"], "OK", tipo)                          # no restringe
             self.assertTrue(any("Conducta inapropiada confirmada" in o for o in uno["observaciones"]), tipo)
 
@@ -297,3 +303,24 @@ class ConductaTest(unittest.TestCase):
         a = evaluar(Metricas("A", "RENT", eventos=[Evento("conducta_inapropiada", HOY, subtipo="ABUSIVE_LANGUAGE")], **base), P, PESOS, REGLAS, HOY)
         b = evaluar(Metricas("B", "RENT", eventos=[Evento("conducta_inapropiada", HOY, subtipo="PROSTITUTION_FRAUD")], **base), P, PESOS, REGLAS, HOY)
         self.assertLess(b["score_final"], a["score_final"])
+
+
+class CupoTest(unittest.TestCase):
+    def test_cupo_por_score_y_compuertas(self):
+        from score.engine import Recaudo
+        base = dict(dias_antiguedad=600, n_finalizados=200, n_cancel_piloto=0, n_sin_novedad_a_tiempo=200)
+        top = ev(Metricas("T", "B2B", n_alto_valor=40, n_alto_valor_ok=40, **base))
+        self.assertEqual(top["cupo"]["tramo"], "MAXIMO"); self.assertIsNone(top["cupo"]["monto_max"])
+        sin_ev = ev(Metricas("S", "B2B", n_alto_valor=3, n_alto_valor_ok=3, **base))          # excelente pero sin evidencia
+        self.assertEqual(sin_ev["cupo"]["tramo"], "MUY_ALTO")
+        nov = ev(Metricas("N", "B2B", n_alto_valor=40, n_alto_valor_ok=25, **base))           # novedades: baja un tramo
+        self.assertLess(["SIN_CUPO", "MINIMO", "MEDIO", "ALTO", "MUY_ALTO", "MAXIMO"].index(nov["cupo"]["tramo"]), 4)
+        deuda = ev(Metricas("D", "B2B", recaudos=[Recaudo(datetime(2026, 9, 1, 9))], **base))  # recaudo vencido
+        self.assertEqual(deuda["cupo"]["tramo"], "SIN_CUPO")
+        nuevo = ev(Metricas("V", "B2B", activado_piloto=date(2026, 9, 10), n_finalizados=10))
+        self.assertEqual(nuevo["cupo"]["tramo"], "SIN_CUPO")
+        prov = ev(Metricas("P", "B2B", dias_antiguedad=200, n_finalizados=10, n_sin_novedad_a_tiempo=10))
+        self.assertIn(prov["cupo"]["tramo"], ("SIN_CUPO", "MINIMO"))
+        blq = ev(Metricas("B", "B2B", reglas_activas=["imei_compartido"], **base))
+        self.assertEqual(blq["cupo"]["tramo"], "SIN_CUPO")
+        self.assertEqual(ev(Metricas("Z", "B2C"))["cupo"]["tramo"], "SIN_CUPO")               # sin score

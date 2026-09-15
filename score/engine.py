@@ -20,15 +20,19 @@ TIPOS = ("B2B", "RENT", "B2C")
 EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
            "invitacion_rent", "expulsion", "baneo_imei", "conducta_inapropiada")
 
-# Bloques del modelo (v0.3, 2026-09-15):
-#   POSITIVAS      → suman: la confianza que el piloto se GANA (experiencia, antigüedad,
-#                    servicios sin novedad). Un piloto nuevo arranca en 0.
-#   PENALIZACIONES → sólo descuentan: antecedentes + conductas operativas malas
-#                    (cancelar, pagar tarde el recaudo, novedades en alto valor,
-#                    no asistir a reservas, activación express). Portarse bien =
-#                    descuento 0, nunca puntos.
-POSITIVAS = ("finalizados", "antiguedad", "sin_novedades")
-PENALIZACIONES = EVENTOS + ("activacion_express", "cancelacion_piloto", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
+# Bloques del modelo (v0.4, 2026-09-15 — "cuenta de confianza"):
+#   BASE      → sólo suman: experiencia y antigüedad. Es la confianza que el piloto se
+#               gana con el tiempo (0 → base_max). Un piloto recién activado vale 0.
+#   MIXTAS    → la MISMA variable suma o resta: mejor que la referencia poblacional
+#               suma, peor resta (cancelación, sin novedades, recaudo, alto valor, reservas).
+#   NEGATIVAS → sólo restan: antecedentes y activación express.
+#   SCORE = clip( BASE + (5 − base_max)·B⁺ − base_max·B⁻ , 0, 5 )
+BASE = ("finalizados", "antiguedad")
+MIXTAS = ("cancelacion_piloto", "sin_novedades", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
+NEGATIVAS = EVENTOS + ("activacion_express",)
+# compatibilidad con código que agrupa por "positivas / penalizaciones"
+POSITIVAS = BASE
+PENALIZACIONES = MIXTAS + NEGATIVAS
 
 
 # ────────────────────────────── primitivas ──────────────────────────────
@@ -276,7 +280,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         cruda = m.n_cancel_piloto / m.n_aplicables
         adj = tasa_ajustada(m.n_cancel_piloto, m.n_aplicables, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
         out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                    "detalle": {"x": m.n_cancel_piloto, "n": m.n_aplicables,
+                    "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                    "detalle": {"x": m.n_cancel_piloto, "n": m.n_aplicables, "referencia_p0": _c(c, "p0", m.tipo),
                                 "tasa_cruda": round(cruda, 4), "tasa_ajustada": round(adj, 4),
                                 "excluidos_no_atribuibles": m.n_cancel_pasajero + m.n_cancel_plataforma}}
 
@@ -304,7 +309,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         x, n = m.n_sin_novedad_a_tiempo, m.n_finalizados
         adj = tasa_ajustada(x, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
         out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                    "detalle": {"x": x, "n": n, "tasa_cruda": round(x / n, 4), "tasa_ajustada": round(adj, 4)}}
+                    "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                    "detalle": {"x": x, "n": n, "referencia_p0": _c(c, "p0", m.tipo), "tasa_cruda": round(x / n, 4), "tasa_ajustada": round(adj, 4)}}
 
     # 5) Alto valor declarado (mixta: exposición × desempeño)
     var = "alto_valor"
@@ -318,12 +324,12 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         prop = n_av / m.n_finalizados
         expo = math.sqrt(clip(n_av / _c(c, "n_ref", m.tipo), 0, 1) * clip(prop / _c(c, "prop_ref", m.tipo), 0, 1))
         adj = tasa_ajustada(ok, n_av, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
-        # Penalización pura: sin novedades en alto valor = 5 (descuento 0); con
-        # novedades baja en proporción a la exposición (pocos servicios caros ≈ nada).
-        s_neutro = smax
+        # Mixta: mejor cumplimiento que la referencia suma, peor resta, y el efecto se
+        # escala por la exposición (pocos servicios caros ≈ neutro, no premia por caro).
+        s_neutro = rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s_desemp = rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s = s_neutro + expo * (s_desemp - s_neutro)
-        out[var] = {"score": s, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
+        out[var] = {"score": s, "neutro": s_neutro, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
                                             "exposicion": round(expo, 4), "cumplimiento_ajustado": round(adj, 4),
                                             "score_neutro": round(s_neutro, 3), "score_desempeno": round(s_desemp, 3)}}
 
@@ -359,7 +365,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         else:
             adj = tasa_ajustada(a_tiempo, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
             out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                        "detalle": {"episodios": len(m.recaudos), "a_tiempo": a_tiempo, "tarde": tarde,
+                        "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                        "detalle": {"episodios": len(m.recaudos), "referencia_p0": _c(c, "p0", m.tipo), "a_tiempo": a_tiempo, "tarde": tarde,
                                     "vencidos_sin_pagar": vencidos, "pendientes_en_plazo": pendientes - vencidos,
                                     "n": n, "limite_horas": lim, "tasa_cruda": round(a_tiempo / n, 4),
                                     "tasa_ajustada": round(adj, 4), "horas_por_episodio": horas_list}}
@@ -378,7 +385,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             c = params["tasas"][var]
             adj = tasa_ajustada(cum, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
             out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                        "detalle": {"cumplidas": cum, "incumplidas_atrib": inc, "n": n,
+                        "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                        "detalle": {"cumplidas": cum, "referencia_p0": _c(c, "p0", m.tipo), "incumplidas_atrib": inc, "n": n,
                                     "no_atribuibles_excluidas": m.n_res_no_atrib or 0,
                                     "tasa_cruda": round(cum / n, 4), "tasa_ajustada": round(adj, 4)}}
     return out
@@ -390,8 +398,8 @@ def validar_pesos(pesos_tipo: dict[str, float], max_participacion) -> list[str]:
     dentro de cada bloque, que es donde la proporción manda."""
     avisos = []
     if not isinstance(max_participacion, dict):
-        max_participacion = {"positivas": max_participacion, "penalizaciones": max_participacion}
-    for nombre, vars_ in (("positivas", POSITIVAS), ("penalizaciones", PENALIZACIONES)):
+        max_participacion = {"base": max_participacion, "comportamiento": max_participacion}
+    for nombre, vars_ in (("base", BASE), ("comportamiento", MIXTAS + NEGATIVAS)):
         tot = sum((pesos_tipo.get(v) or 0) for v in vars_)
         if tot <= 0:
             avisos.append(f"la suma de pesos de {nombre} es 0"); continue
@@ -403,7 +411,7 @@ def validar_pesos(pesos_tipo: dict[str, float], max_participacion) -> list[str]:
             elif w / tot > lim + 1e-9:
                 avisos.append(f"{v} concentra {w/tot:.0%} de {nombre} > {lim:.0%} permitido")
     for k in pesos_tipo:
-        if k not in POSITIVAS and k not in PENALIZACIONES:
+        if k not in BASE and k not in MIXTAS and k not in NEGATIVAS:
             avisos.append(f"peso desconocido: {k}")
     return avisos
 
@@ -421,37 +429,63 @@ def _promedio_ponderado(subs: dict[str, dict], pesos_tipo: dict[str, float], var
     return (num / den if den else None), den
 
 
+def balance(sub: float, neutro: float, score_max: float = 5.0) -> float:
+    """Convierte un sub-score 0–5 en un balance −1…+1 alrededor de su neutro:
+    +1 = lo mejor posible, 0 = igual que la referencia, −1 = lo peor posible.
+    Para las NEGATIVAS el neutro es 5 (sin eventos) y el balance sólo puede ser ≤ 0."""
+    if sub >= neutro:
+        return 0.0 if score_max - neutro <= 1e-12 else (sub - neutro) / (score_max - neutro)
+    return 0.0 if neutro <= 1e-12 else (sub - neutro) / neutro
+
+
 def score_comportamental(subs: dict[str, dict], pesos_tipo: dict[str, float],
-                         alpha: float = 1.0, score_max: float = 5.0) -> tuple[float | None, dict]:
-    """Dos bloques:
-      D = Σ w·s / Σ w   sobre las variables POSITIVAS con dato (confianza ganada).
-      P = Σ w_v·(1 − s_v/5) / Σ w_v   sobre las PENALIZACIONES aplicables (0 = nada que descontar).
-      SCORE = D · (1 − α·P)
-    Portarse bien en una penalización vale descuento 0, nunca suma puntos; cada
-    penalización descuenta como máximo α·(w_v/Σw) → ninguna domina sola.
-    Sin ninguna positiva con dato → None (sin evidencia)."""
-    D, den_d = _promedio_ponderado(subs, pesos_tipo, POSITIVAS)
+                         base_max: float = 3.5, score_max: float = 5.0, alpha: float = 1.0,
+                         confianza: float = 1.0) -> tuple[float | None, dict]:
+    """Cuenta de confianza (v0.4):
+      A  = base_max · (Σ w·s / Σ w)/5  sobre BASE (experiencia, antigüedad)      ∈ [0, base_max]
+      b_v = balance de cada MIXTA (±) o NEGATIVA (≤ 0) alrededor de su neutro     ∈ [−1, +1]
+      B⁺ = Σ_{mixtas} w·max(b,0) / Σ_{mixtas} w        (lo que hace mejor que la referencia)
+      B⁻ = Σ_{mixtas+negativas} w·max(−b,0) / Σ w      (lo que hace peor + antecedentes)
+      SCORE = clip( A + (5 − base_max)·confianza·B⁺ − α·base_max·B⁻ , 0, 5 )
+    Nuevo sin experiencia: A = 0. La misma variable suma o resta según de qué lado
+    de la referencia esté. Lo que SUMA se gana en proporción a la evidencia
+    (confianza = n/n_min); lo que RESTA cuenta completo. Ninguna variable puede
+    mover más que su peso relativo."""
+    D, den_b = _promedio_ponderado(subs, pesos_tipo, BASE)
     if D is None:
         return None, {}
+    A = base_max * D / score_max
     contrib = {}
-    for var in POSITIVAS:
+    for var in BASE:
         r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
         if r and r.get("score") is not None and w > 0:
-            contrib[var] = {"bloque": "positiva", "peso_efectivo": w / den_d, "aporte": w / den_d * r["score"]}
-    num_p = den_p = 0.0
-    for var in PENALIZACIONES:
+            contrib[var] = {"bloque": "base", "peso_efectivo": w / den_b, "aporte": base_max * (w / den_b) * r["score"] / score_max}
+    den_mix = sum((pesos_tipo.get(v, 0) or 0) for v in MIXTAS if (subs.get(v) or {}).get("score") is not None)
+    den_all = sum((pesos_tipo.get(v, 0) or 0) for v in MIXTAS + NEGATIVAS if (subs.get(v) or {}).get("score") is not None)
+    Bp = Bm = 0.0
+    for var in MIXTAS + NEGATIVAS:
         r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
         if not r or r.get("score") is None or w <= 0:
             continue
-        num_p += w * (1.0 - r["score"] / score_max); den_p += w
-    P = (num_p / den_p) if den_p else 0.0
-    for var in PENALIZACIONES:
-        r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
-        if r and r.get("score") is not None and w > 0:
-            contrib[var] = {"bloque": "penalizacion", "peso_efectivo": w / den_p,
-                            "descuento": alpha * w / den_p * (1.0 - r["score"] / score_max)}
-    contrib["_bloques"] = {"D_base": D, "P_penal": P, "factor": 1.0 - alpha * P, "alpha": alpha}
-    return D * (1.0 - alpha * P), contrib
+        neutro = r.get("neutro", score_max if var in NEGATIVAS else score_max)
+        b = balance(r["score"], neutro, score_max)
+        if var in NEGATIVAS:
+            b = min(0.0, b)
+        gan = (5 - base_max) * confianza * (w / den_mix) * max(b, 0.0) if var in MIXTAS and den_mix else 0.0
+        per = alpha * base_max * (w / den_all) * max(-b, 0.0) if den_all else 0.0
+        Bp += (w / den_mix) * max(b, 0.0) if var in MIXTAS and den_mix else 0.0
+        Bm += (w / den_all) * max(-b, 0.0) if den_all else 0.0
+        contrib[var] = {"bloque": "mixta" if var in MIXTAS else "negativa", "balance": b, "neutro": neutro,
+                        "peso_efectivo": (w / den_mix if var in MIXTAS and den_mix else 0.0),
+                        "peso_efectivo_perdida": (w / den_all if den_all else 0.0),
+                        "aporte": gan - per, "max_ganancia": ((5 - base_max) * confianza * w / den_mix if var in MIXTAS and den_mix else 0.0),
+                        "max_perdida": (alpha * base_max * w / den_all if den_all else 0.0)}
+    ganancia = (5 - base_max) * confianza * Bp
+    perdida = alpha * base_max * Bm
+    sc = clip(A + ganancia - perdida, 0.0, score_max)
+    contrib["_bloques"] = {"A_base": A, "base_max": base_max, "B_mas": Bp, "B_menos": Bm, "confianza": confianza,
+                           "ganancia": ganancia, "perdida": perdida, "alpha": alpha, "score_sin_clip": A + ganancia - perdida}
+    return sc, contrib
 
 
 def aplicar_reglas(score: float | None, reglas_activas: list[str], catalogo: dict) -> dict:
@@ -587,6 +621,71 @@ def evaluar_documentos(d: Documentos | None, params: dict, hoy: date) -> dict:
     return out
 
 
+def cupo_monto(score: float | None, vigencia: str, estado: str, subs: dict, contrib: dict,
+               es_nuevo: bool, m: Metricas, params: dict) -> dict:
+    """Cupo de confianza en plata: tramo de monto que se le puede confiar al piloto
+    (valor declarado / recaudo contra entrega) según su score. Lectura del score,
+    no entra al cálculo. Devuelve tramo, rango, monto máximo y los motivos."""
+    cfg = params.get("cupo_monto")
+    if not cfg or score is None:
+        return {"tramo": "SIN_CUPO", "monto_max": 0, "texto": "sin score", "motivos": ["sin score"]}
+    tramos = sorted(cfg["tramos"], key=lambda t: t["score_min"])
+    orden = [t["nombre"] for t in tramos]
+    por_nombre = {t["nombre"]: t for t in tramos}
+    comp = cfg.get("compuertas") or {}
+    motivos = []
+
+    # 1) tramo por score (el mayor alcanzado, sin contar MAXIMO, que tiene requisitos propios)
+    tramo = "SIN_CUPO"
+    for t in tramos:
+        if t["nombre"] != "MAXIMO" and score >= t["score_min"]:
+            tramo = t["nombre"]
+    motivos.append(f"score {score:.1f} → {tramo}")
+
+    # 2) tramo MAXIMO: score + vigencia definitiva + sin penalización en lo que toca plata + evidencia
+    req = cfg.get("maximo_requiere") or {}
+    tmax = por_nombre.get("MAXIMO")
+    if tmax and score >= tmax["score_min"]:
+        faltan = []
+        if req.get("vigencia_definitiva") and vigencia != "DEFINITIVO":
+            faltan.append("score provisional")
+        for v in req.get("sin_penalizacion_en", []):
+            c = contrib.get(v)
+            if c and c.get("balance", 0) < -1e-9:
+                faltan.append(f"peor que la referencia en {v}")
+        n_ok = m.n_alto_valor_ok or 0
+        aplica_av = m.tipo in params["aplicabilidad"].get("alto_valor", [])
+        if aplica_av and n_ok < int(req.get("min_servicios_alto_valor_ok", 0)):
+            faltan.append(f"sólo {n_ok} servicios de alto valor sin novedad (mín. {req.get('min_servicios_alto_valor_ok')})")
+        if not faltan:
+            tramo = "MAXIMO"; motivos.append("cumple requisitos del tramo máximo")
+        else:
+            motivos.append("no llega al máximo: " + "; ".join(faltan))
+
+    def bajar(a, motivo):
+        nonlocal tramo
+        if orden.index(a) < orden.index(tramo):
+            tramo = a; motivos.append(motivo)
+
+    # 3) compuertas
+    if estado != "OK":
+        bajar(comp.get("restringido_o_bloqueado", "SIN_CUPO"), f"estado {estado}")
+    rc = (subs.get("recaudo_24h") or {}).get("detalle") or {}
+    if rc.get("vencidos_sin_pagar"):
+        bajar(comp.get("recaudo_vencido_sin_pagar", "SIN_CUPO"), f"recaudo vencido sin pagar ({rc['vencidos_sin_pagar']})")
+    if es_nuevo:
+        bajar(comp.get("nuevo_tope", "SIN_CUPO"), "piloto nuevo")
+    elif vigencia == "PROVISIONAL":
+        bajar(comp.get("provisional_tope", "MINIMO"), "score provisional (pocos servicios)")
+    av = contrib.get("alto_valor")
+    if comp.get("novedades_alto_valor_baja_un_tramo") and av and av.get("balance", 0) < -1e-9 and orden.index(tramo) > 0:
+        bajar(orden[orden.index(tramo) - 1], "novedades en servicios de alto valor: un tramo menos")
+
+    t = por_nombre[tramo]
+    return {"tramo": tramo, "monto_min": t["monto_min"], "monto_max": t["monto_max"], "texto": t["texto"],
+            "moneda": cfg.get("moneda", "COP"), "motivos": motivos}
+
+
 def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | None = None) -> dict:
     """Pipeline completo para un piloto × tipo. Devuelve un dict serializable
     con el desglose entero (auditable)."""
@@ -610,9 +709,10 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
     if n == 0 and not es_nuevo:
         sc, contrib = None, {}
     else:
-        sc, contrib = score_comportamental(subs, pesos_tipo, g.get("alpha_antecedentes", 1.0), g["score_max"])
+        sc, contrib = score_comportamental(subs, pesos_tipo, float(g.get("base_confianza_max", 3.5)),
+                                           g["score_max"], g.get("alpha_antecedentes", 1.0), confianza)
         if n == 0 and sc is not None:
-            sc = 0.0; contrib["_bloques"] = {**contrib.get("_bloques", {}), "D_base": 0.0, "nota": "nuevo sin servicios"}
+            sc = 0.0; contrib["_bloques"] = {**contrib.get("_bloques", {}), "A_base": 0.0, "nota": "nuevo sin servicios"}
 
     reg = aplicar_reglas(sc, m.reglas_activas, reglas.get("reglas", {}))
     docs = evaluar_documentos(m.documentos, params, hoy) if m.tipo in (params.get("documentos") or {}).get("aplica_a", TIPOS) else evaluar_documentos(None, params, hoy)
@@ -631,6 +731,7 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
 
     obs = observaciones(m, subs, vigencia, n_min, restricciones, reg["alertas"], params)
     obs = docs["restringe"] + obs + docs["por_vencer"]
+    cupo = cupo_monto(reg["score_final"], vigencia, estado, subs, contrib, es_nuevo, m, params)
     d = g["decimales"]
     red = lambda v: None if v is None else round(v + 1e-12, d)
     return {
@@ -648,6 +749,7 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
         "n_aplicables": n, "n_min": n_min,
         "estado": estado, "restricciones_activas": restricciones,
         "documentos": docs,
+        "cupo": cupo,
         "tope_por_regla": reg["tope"], "alertas": reg["alertas"],
         "sub_scores": {k: ({**v, "score": None if v["score"] is None else round(v["score"], 3)}) for k, v in subs.items()},
         "contribuciones": {k: {kk: (round(vv, 4) if isinstance(vv, float) else vv) for kk, vv in v.items()}

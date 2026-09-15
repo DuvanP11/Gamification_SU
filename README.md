@@ -1,10 +1,13 @@
 # piloto-score — Score Operacional de Pilotos (0.0–5.0)
 
 Motor local, parametrizable y auditable para puntuar pilotos en **B2B**, **Rent** y **B2C**.
-`SCORE = confianza ganada × (1 − penalizaciones)`: lo único que suma es experiencia,
-antigüedad y servicios sin novedad (un piloto recién activado arranca en 0.0); todo lo
-demás —antecedentes, cancelaciones, recaudo tarde, novedades en alto valor, reservas no
-asistidas, activación express, conducta inapropiada confirmada— sólo descuenta.
+**Cuenta de confianza**: `SCORE = base ganada (experiencia + antigüedad, 0 → 3.5; el
+recién activado arranca en 0.0) + lo que hace MEJOR que la referencia de su tipo (hasta
++1.5, en proporción a la evidencia) − lo que hace PEOR y sus antecedentes (hasta −3.5)`.
+Cancelación, sin novedades, recaudo, alto valor y reservas son **mixtas** (la misma
+variable suma o resta); suspensiones, invitaciones, expulsión, IMEI, conducta
+inapropiada confirmada y activación express **sólo restan**. Además calcula el **cupo de
+confianza en plata** (cuánto valor declarado / recaudo se le puede confiar).
 La metodología completa (fórmulas, tratamiento de casos, ejemplos, riesgos) está en
 [`docs/METODOLOGIA.md`](docs/METODOLOGIA.md).
 

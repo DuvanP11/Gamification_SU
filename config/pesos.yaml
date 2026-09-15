@@ -3,8 +3,10 @@
 # Independientes de la metodología: cambiar acá NO cambia cómo se mide nada.
 # Se renormalizan sobre las variables que apliquen y tengan dato, así que la
 # suma no tiene que ser 100; se usa 100 sólo para leerlos como porcentaje.
-# Bloques: POSITIVAS (finalizados, antiguedad, sin_novedades) suman; el resto son
-# PENALIZACIONES y sólo descuentan. Los pesos son relativos DENTRO de su bloque.
+# Bloques: BASE (finalizados, antiguedad) sólo suma; MIXTAS (cancelación, sin
+# novedades, recaudo, alto valor, reservas) suman o restan según la referencia;
+# NEGATIVAS (antecedentes, activación express) sólo restan. Los pesos son
+# relativos DENTRO de su bloque (base / comportamiento = mixtas + negativas).
 # Regla: ninguna variable > max_participacion_peso de su bloque (parametros.yaml).
 # ============================================================================
 B2B:
