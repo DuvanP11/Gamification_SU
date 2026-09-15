@@ -125,7 +125,7 @@ async function recalc(){
 function fmt(x){return x==null?'—':Number(x).toFixed(1)}
 function fecha(d){return d?d.slice(0,10):'—'}
 function calif(x){return x==null?'—':Number(x).toFixed(1)}
-var CUPO_COL={SIN_CUPO:'#9ca3af',MINIMO:'#ea580c',MEDIO:'#ca8a04',ALTO:'#65a30d',MUY_ALTO:'#15803d',MAXIMO:'#2d1f7a'};
+var CUPO_COL={NO_APLICA:'#d1d5db',SIN_CUPO:'#9ca3af',MINIMO:'#ea580c',MEDIO:'#ca8a04',ALTO:'#65a30d',MUY_ALTO:'#15803d',MAXIMO:'#2d1f7a'};
 function cupoCell(c){if(!c)return '—'; return '<span class="pill" style="background:'+(CUPO_COL[c.tramo]||'#9ca3af')+'" title="'+(c.motivos||[]).join(' · ').replace(/"/g,'&quot;')+'">'+c.tramo.replace('_',' ')+'</span><br><small>'+c.texto+'</small>'}
 function idCell(id,rotulo){if(!id)return '<small>'+rotulo+': —</small>';
   return '<span class="idc" data-id="'+id+'" title="Clic para copiar el ID de '+rotulo+'"><small>'+rotulo+'</small> '+id+' <b>⧉</b></span>'}

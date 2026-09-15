@@ -324,3 +324,4 @@ class CupoTest(unittest.TestCase):
         blq = ev(Metricas("B", "B2B", reglas_activas=["imei_compartido"], **base))
         self.assertEqual(blq["cupo"]["tramo"], "SIN_CUPO")
         self.assertEqual(ev(Metricas("Z", "B2C"))["cupo"]["tramo"], "SIN_CUPO")               # sin score
+        self.assertEqual(ev(Metricas("R", "RENT", dias_antiguedad=600, n_finalizados=200))["cupo"]["tramo"], "NO_APLICA")

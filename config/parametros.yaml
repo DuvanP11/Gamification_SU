@@ -169,6 +169,7 @@ documentos:
 # ---------------------------------------------------------------------------
 cupo_monto:
   moneda: COP
+  aplica_a: [B2B, B2C]     # transporte de personas (RENT) no lleva valor declarado ni recaudo
   tramos:
     - { nombre: SIN_CUPO,  score_min: 0.0, monto_min: 0,       monto_max: 0,       texto: "sin cupo" }
     - { nombre: MINIMO,    score_min: 1.5, monto_min: 20000,   monto_max: 60000,   texto: "20.000 – 60.000" }

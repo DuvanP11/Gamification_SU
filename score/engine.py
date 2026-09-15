@@ -629,6 +629,8 @@ def cupo_monto(score: float | None, vigencia: str, estado: str, subs: dict, cont
     cfg = params.get("cupo_monto")
     if not cfg or score is None:
         return {"tramo": "SIN_CUPO", "monto_max": 0, "texto": "sin score", "motivos": ["sin score"]}
+    if m.tipo not in cfg.get("aplica_a", TIPOS):
+        return {"tramo": "NO_APLICA", "monto_min": 0, "monto_max": 0, "texto": "no aplica en " + m.tipo, "motivos": ["sin valor declarado ni recaudo en " + m.tipo]}
     tramos = sorted(cfg["tramos"], key=lambda t: t["score_min"])
     orden = [t["nombre"] for t in tramos]
     por_nombre = {t["nombre"]: t for t in tramos}
