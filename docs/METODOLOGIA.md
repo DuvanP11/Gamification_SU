@@ -282,6 +282,20 @@ sub_finalizados = 5 · min(1, ln(1 + finalizados) / ln(1 + n_ref[tipo]))
 No puntúa. Alimenta `n_aplicables` (denominadores y **confianza**) y permite calcular la
 proporción de alto valor. Tratarlo como variable puntuada duplicaría `finalizados`.
 
+## 5b. Manejo de tiempos (ventanas por variable)
+
+Cada variable mira **su propia ventana**; lo que queda fuera no la afecta (parámetro
+`ventana_dias` / `desde` en `parametros.yaml`, extracción con las columnas `vc_*` y `vn_*`):
+
+| Variable | Ventana | Cómo |
+|---|---|---|
+| Cancelaciones propias | **últimos 6 meses** (180 d) | tasa sobre los servicios de esos 6 meses; una cancelación de hace 7 meses ya no castiga |
+| Servicios sin novedad y a tiempo | **último año** (365 d) | tasa sobre los finalizados del año |
+| Cumplimiento de reservas | **últimos 3 meses** (90 d) | tasa sobre las reservas de esos 3 meses |
+| Conducta inapropiada confirmada | **desde el 2026-07-01** (activación de la revisión), **sin decaimiento** | todos los casos confirmados desde julio pesan igual; cuando el módulo lleve más tiempo, pasar a ventana móvil o semivida |
+| Experiencia (base), recaudo, alto valor | 90 d (ventana por defecto) | — |
+| Suspensiones, invitaciones, expulsión, IMEI, express | 730 d con semivida | pierden peso con el tiempo en vez de cortar de golpe |
+
 ## 6. Tratamiento de datos faltantes
 
 | Situación | Tratamiento | Motivo |

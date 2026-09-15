@@ -67,7 +67,8 @@ Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependenci
 
 ## Datos de entrada
 
-`data/pilotos.csv` (una fila por piloto × tipo, ventana de 90 días; incluye contexto:
+`data/pilotos.csv` (una fila por piloto × tipo, ventana de 90 días más las columnas de
+ventana propia `vc_*` —cancelación a 6 meses— y `vn_*` —sin novedades a 1 año—; incluye contexto:
 `driver_id`, `passenger_id`, activaciones, `calif_gamification`, `calif_app`),
 `data/eventos.csv` (una fila por evento disciplinario, con fecha y si sigue activo),
 `data/recaudos.csv` (un recaudo no abonado en el momento por fila: `fecha_recaudo`,

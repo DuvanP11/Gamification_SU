@@ -1,5 +1,6 @@
 -- 01_pilotos.sql → data_real/pilotos.csv
--- Una fila por piloto (bookings.driver_id) × tipo, ventana de 90 días.
+-- Una fila por piloto (bookings.driver_id) × tipo. Ventanas (manejo de tiempos):
+--   experiencia y contexto: 90 días (n_*)  ·  cancelación propia: 180 días (vc_*).
 -- Verificado: status_cd 4/107/108 finalizado · 100 canceló piloto · 102 usuario · 104 plataforma.
 -- SUPUESTOS (a confirmar con Operaciones):
 --   tipo: booking con package → mensajería (company_id lleno → B2B, vacío → B2C); sin package → RENT.
@@ -11,25 +12,29 @@ WITH
     SELECT _id,
            argMax(toString(driver_id),  _sdc_batched_at) AS drv,
            argMax(status_cd,            _sdc_batched_at) AS st,
-           argMax(toString(company_id), _sdc_batched_at) AS cia
+           argMax(toString(company_id), _sdc_batched_at) AS cia,
+           min(created_at)                                AS creado
     FROM picapmongoprod.bookings
-    WHERE created_at >= now() - INTERVAL 90 DAY
+    WHERE created_at >= now() - INTERVAL 180 DAY
       AND notEmpty(ifNull(toString(driver_id), ''))
     GROUP BY _id),
   pk AS (
     SELECT DISTINCT toString(booking_id) AS booking_id
     FROM picapmongoprod.packages
-    WHERE created_at >= now() - INTERVAL 97 DAY),
+    WHERE created_at >= now() - INTERVAL 187 DAY),
   tip AS (
-    SELECT u.drv AS drv, u.st AS st,
+    SELECT u.drv AS drv, u.st AS st, u.creado >= now() - INTERVAL 90 DAY AS en90,
            if(p.booking_id != '', if(notEmpty(ifNull(u.cia, '')), 'B2B', 'B2C'), 'RENT') AS tipo
     FROM ult u LEFT JOIN pk p ON p.booking_id = u._id),
   agg AS (
     SELECT drv AS piloto_id, tipo,
-           countIf(st IN (4, 107, 108)) AS n_finalizados,
-           countIf(st = 100)            AS n_cancel_piloto,
-           countIf(st = 102)            AS n_cancel_pasajero,
-           countIf(st = 104)            AS n_cancel_plataforma
+           countIf(st IN (4, 107, 108) AND en90) AS n_finalizados,
+           countIf(st = 100 AND en90)            AS n_cancel_piloto,
+           countIf(st = 102 AND en90)            AS n_cancel_pasajero,
+           countIf(st = 104 AND en90)            AS n_cancel_plataforma,
+           countIf(st = 100)                     AS vc_n_cancel_piloto,      -- 180 días
+           countIf(st IN (4, 107, 108))          AS vc_n_finalizados,
+           countIf(st IN (102, 104))             AS vc_n_no_atribuibles
     FROM tip GROUP BY piloto_id, tipo),
   pas AS (
     SELECT _id,
@@ -70,6 +75,8 @@ SELECT
   dateDiff('day', toDate(p.creado), today())                         AS dias_antiguedad,
   a.n_finalizados, a.n_cancel_piloto, a.n_cancel_pasajero, a.n_cancel_plataforma,
   0 AS n_otros_atribuibles,
+  a.vc_n_cancel_piloto, a.vc_n_finalizados, 0 AS vc_n_otros_atribuibles, a.vc_n_no_atribuibles,
+  '' AS vn_n_finalizados, '' AS vn_n_sin_novedad_a_tiempo,
   '' AS n_sin_novedad_a_tiempo, '' AS n_alto_valor, '' AS n_alto_valor_ok,
   '' AS n_res_cumplidas, '' AS n_res_incumplidas_atrib, '' AS n_res_cancel_atrib, '' AS n_res_no_atrib
 FROM agg a

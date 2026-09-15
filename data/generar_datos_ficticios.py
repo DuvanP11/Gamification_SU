@@ -16,7 +16,8 @@ def oid(n):  # id estilo Mongo ObjectId, determinista
 def fecha_hace(dias): return (HOY - timedelta(days=dias)).isoformat()
 
 COLS = ["piloto_id","nombre","caso","tipo","driver_id","passenger_id","activado_piloto","activado_pasajero",
-        "calif_gamification","calif_app","activacion_express","dias_antiguedad","n_finalizados","n_cancel_piloto","n_cancel_pasajero",
+        "calif_gamification","calif_app","activacion_express",
+        "vc_n_cancel_piloto","vc_n_finalizados","vc_n_otros_atribuibles","vc_n_no_atribuibles","vn_n_finalizados","vn_n_sin_novedad_a_tiempo","dias_antiguedad","n_finalizados","n_cancel_piloto","n_cancel_pasajero",
         "n_cancel_plataforma","n_otros_atribuibles","n_sin_novedad_a_tiempo","n_alto_valor","n_alto_valor_ok",
         "n_res_cumplidas","n_res_incumplidas_atrib","n_res_cancel_atrib","n_res_no_atrib"]
 
@@ -98,12 +99,25 @@ for tipo in ("B2B", "RENT", "B2C"):
         if R.random() < 0.05: reglas.append(dict(piloto_id=pid, regla=R.choice(["cancelaciones_en_racha", "fake_gps", "cuenta_nueva_retiro_alto"])))
         filas.append(contexto(row, tipo))
 
+# Ventanas propias (manejo de tiempos): cancelación a 6 meses y novedades a 1 año, derivadas
+# de los conteos de 90 días con un factor según la antigüedad. RNG aparte.
+R3 = random.Random(11)
+for row in filas:
+    ant = row.get("dias_antiguedad") or 0
+    f6 = min(2.0, max(1.0, ant / 90)); f12 = min(4.0, max(1.0, ant / 90))
+    fin = int(row.get("n_finalizados") or 0); cp = int(row.get("n_cancel_piloto") or 0)
+    row["vc_n_cancel_piloto"] = int(cp * f6 * R3.uniform(0.8, 1.2)); row["vc_n_finalizados"] = int(fin * f6 * R3.uniform(0.9, 1.1))
+    row["vc_n_otros_atribuibles"] = 0; row["vc_n_no_atribuibles"] = int((int(row.get("n_cancel_pasajero") or 0)) * f6)
+    if row.get("n_sin_novedad_a_tiempo") not in (None, ""):
+        vnf = int(fin * f12 * R3.uniform(0.9, 1.1)); row["vn_n_finalizados"] = vnf
+        row["vn_n_sin_novedad_a_tiempo"] = min(vnf, int(int(row["n_sin_novedad_a_tiempo"]) * f12 * R3.uniform(0.95, 1.05)))
+
 # Conducta inapropiada confirmada: RNG aparte para no mover el resto de los datos.
 R2 = random.Random(7)
 for row in filas:
     if row["piloto_id"] in ("P004",) or (row["piloto_id"] > "P100" and R2.random() < 0.06):
         for _ in range(R2.choice([1, 1, 1, 2, 3])):
-            eventos.append(dict(piloto_id=row["piloto_id"], tipo_evento="conducta_inapropiada", fecha=fecha_hace(R2.randint(5, 400)), activo=0, severidad="",
+            eventos.append(dict(piloto_id=row["piloto_id"], tipo_evento="conducta_inapropiada", fecha=fecha_hace(R2.randint(5, 75)), activo=0, severidad="",
                                 subtipo=R2.choice(["ABUSIVE_LANGUAGE", "ABUSIVE_LANGUAGE", "PROSTITUTION_FRAUD"])))
 
 def escribir(nombre, cols, rows):

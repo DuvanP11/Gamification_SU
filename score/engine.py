@@ -175,6 +175,14 @@ class Metricas:
     n_res_incumplidas_atrib: int | None = None
     n_res_cancel_atrib: int | None = None
     n_res_no_atrib: int | None = None  # informativo: NO entra al denominador
+    # Conteos en la VENTANA PROPIA de cada variable (manejo de tiempos). None = usar los
+    # conteos base (n_finalizados, n_cancel_piloto…), que son de la ventana por defecto.
+    vc_n_cancel_piloto: int | None = None      # cancelación: últimos `ventana_dias` (180)
+    vc_n_finalizados: int | None = None
+    vc_n_otros_atribuibles: int | None = None
+    vc_n_no_atribuibles: int | None = None
+    vn_n_finalizados: int | None = None        # sin novedades: últimos `ventana_dias` (365)
+    vn_n_sin_novedad_a_tiempo: int | None = None
     eventos: list[Evento] = field(default_factory=list)
     recaudos: list[Recaudo] = field(default_factory=list)   # B2B: recaudos con no pago
     documentos: Documentos | None = None
@@ -224,19 +232,24 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             no(var, "no_aplica"); continue
         cfg = params["eventos"][var]
         evs = [e for e in m.eventos if e.tipo == var]
+        desde = cfg.get("desde")
+        if isinstance(desde, str):
+            desde = date.fromisoformat(desde)
         edades, carga = [], 0.0
         for e in evs:
             edad = (hoy - e.fecha).days
-            if edad > g["ventana_eventos_dias"]:
+            if edad > g["ventana_eventos_dias"] or (desde and e.fecha < desde):
                 continue
             sev = e.severidad
             if sev is None:
                 sev = (cfg.get("severidad_por_subtipo") or {}).get(e.subtipo, cfg["severidad"])
             edades.append(edad)
-            carga += sev * decaimiento(edad, cfg["semivida_dias"])
+            carga += sev * (decaimiento(edad, cfg["semivida_dias"]) if cfg.get("semivida_dias") else 1.0)
         s = sub_score_evento(carga, cfg["tope"], smax)
         out[var] = {"score": s, "detalle": {"n_eventos": len(evs), "en_ventana": len(edades),
                                             "carga": round(carga, 3), "tope": cfg["tope"],
+                                            "desde": desde.isoformat() if desde else None,
+                                            "sin_decaimiento": not cfg.get("semivida_dias"),
                                             "edades_dias": edades}}
 
     # 1b) Antigüedad como piloto (positiva, saturante): un piloto recién activado
@@ -272,19 +285,28 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
 
     # 2) Cancelación propia (tasa, menos es mejor)
     var = "cancelacion_piloto"
+    c = params["tasas"][var]
+    if m.vc_n_cancel_piloto is not None:      # conteos de la ventana propia (p. ej. 6 meses)
+        xc = m.vc_n_cancel_piloto
+        nc = (m.vc_n_finalizados or 0) + xc + (m.vc_n_otros_atribuibles or 0)
+        excl = m.vc_n_no_atribuibles or 0
+        vent = c.get("ventana_dias")
+    else:                                     # sin columnas vc_*: ventana por defecto
+        xc, nc = m.n_cancel_piloto, m.n_aplicables
+        excl = m.n_cancel_pasajero + m.n_cancel_plataforma
+        vent = params["general"].get("ventana_tasas_dias")
     if m.tipo not in aplica[var]:
         no(var, "no_aplica")
-    elif m.n_aplicables == 0:
+    elif nc == 0:
         no(var, "sin_dato")
     else:
-        c = params["tasas"][var]
-        cruda = m.n_cancel_piloto / m.n_aplicables
-        adj = tasa_ajustada(m.n_cancel_piloto, m.n_aplicables, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+        cruda = xc / nc
+        adj = tasa_ajustada(xc, nc, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
         out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                     "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                    "detalle": {"x": m.n_cancel_piloto, "n": m.n_aplicables, "referencia_p0": _c(c, "p0", m.tipo),
+                    "detalle": {"x": xc, "n": nc, "ventana_dias": vent, "referencia_p0": _c(c, "p0", m.tipo),
                                 "tasa_cruda": round(cruda, 4), "tasa_ajustada": round(adj, 4),
-                                "excluidos_no_atribuibles": m.n_cancel_pasajero + m.n_cancel_plataforma}}
+                                "excluidos_no_atribuibles": excl}}
 
     # 3) Finalizados: volumen / experiencia (saturante)
     var = "finalizados"
@@ -301,17 +323,20 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
 
     # 4) Sin novedades dentro de tiempos (tasa sobre finalizados)
     var = "sin_novedades"
+    c = params["tasas"][var]
+    if m.vn_n_sin_novedad_a_tiempo is not None:   # ventana propia (p. ej. 1 año)
+        x, n, vent = m.vn_n_sin_novedad_a_tiempo, (m.vn_n_finalizados or 0), c.get("ventana_dias")
+    else:
+        x, n, vent = m.n_sin_novedad_a_tiempo, m.n_finalizados, params["general"].get("ventana_tasas_dias")
     if m.tipo not in aplica[var]:
         no(var, "no_aplica")
-    elif m.n_sin_novedad_a_tiempo is None or m.n_finalizados == 0:
+    elif x is None or not n:
         no(var, "sin_dato")
     else:
-        c = params["tasas"][var]
-        x, n = m.n_sin_novedad_a_tiempo, m.n_finalizados
         adj = tasa_ajustada(x, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
         out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                     "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                    "detalle": {"x": x, "n": n, "referencia_p0": _c(c, "p0", m.tipo), "tasa_cruda": round(x / n, 4), "tasa_ajustada": round(adj, 4)}}
+                    "detalle": {"x": x, "n": n, "ventana_dias": vent, "referencia_p0": _c(c, "p0", m.tipo), "tasa_cruda": round(x / n, 4), "tasa_ajustada": round(adj, 4)}}
 
     # 5) Alto valor declarado (mixta: exposición × desempeño)
     var = "alto_valor"
@@ -388,7 +413,7 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             adj = tasa_ajustada(cum, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
             out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                         "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                        "detalle": {"cumplidas": cum, "referencia_p0": _c(c, "p0", m.tipo), "incumplidas_atrib": inc, "n": n,
+                        "detalle": {"cumplidas": cum, "ventana_dias": c.get("ventana_dias"), "referencia_p0": _c(c, "p0", m.tipo), "incumplidas_atrib": inc, "n": n,
                                     "no_atribuibles_excluidas": m.n_res_no_atrib or 0,
                                     "tasa_cruda": round(cum / n, 4), "tasa_ajustada": round(adj, 4)}}
     return out

@@ -49,7 +49,10 @@ def _float(v) -> float | None:
 CAMPOS_INT = ["dias_antiguedad", "n_finalizados", "n_cancel_piloto", "n_cancel_pasajero",
               "n_cancel_plataforma", "n_otros_atribuibles", "n_sin_novedad_a_tiempo",
               "n_alto_valor", "n_alto_valor_ok", "n_res_cumplidas", "n_res_incumplidas_atrib",
-              "n_res_cancel_atrib", "n_res_no_atrib"]
+              "n_res_cancel_atrib", "n_res_no_atrib",
+              # ventanas propias (manejo de tiempos): vacío = usar los conteos base
+              "vc_n_cancel_piloto", "vc_n_finalizados", "vc_n_otros_atribuibles", "vc_n_no_atribuibles",
+              "vn_n_finalizados", "vn_n_sin_novedad_a_tiempo"]
 CAMPOS_CERO_POR_DEFECTO = {"n_finalizados", "n_cancel_piloto", "n_cancel_pasajero",
                            "n_cancel_plataforma", "n_otros_atribuibles"}
 

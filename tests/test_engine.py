@@ -335,3 +335,31 @@ class CupoTest(unittest.TestCase):
         self.assertEqual(blq["cupo"]["tramo"], "SIN_CUPO")
         self.assertEqual(ev(Metricas("Z", "B2C"))["cupo"]["tramo"], "SIN_CUPO")               # sin score
         self.assertEqual(ev(Metricas("R", "RENT", dias_antiguedad=600, n_finalizados=200))["cupo"]["tramo"], "NO_APLICA")
+
+
+class TiemposTest(unittest.TestCase):
+    def test_cancelacion_usa_su_ventana_si_viene(self):
+        base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=50)     # 90 d: 33 % (≈ referencia)
+        sin_v = ev(Metricas("A", "RENT", **base))
+        con_v = ev(Metricas("B", "RENT", vc_n_cancel_piloto=10, vc_n_finalizados=290, **base))   # 180 d: 3 %
+        self.assertEqual(con_v["sub_scores"]["cancelacion_piloto"]["detalle"]["n"], 300)
+        self.assertEqual(con_v["sub_scores"]["cancelacion_piloto"]["detalle"]["ventana_dias"], 180)
+        self.assertGreaterEqual(con_v["score_final"], sin_v["score_final"])
+        peor = ev(Metricas("C", "RENT", vc_n_cancel_piloto=250, vc_n_finalizados=50, **base))
+        self.assertLess(peor["score_final"], sin_v["score_final"])
+
+    def test_sin_novedades_ventana_anual(self):
+        r = ev(Metricas("A", "B2B", dias_antiguedad=400, n_finalizados=50, n_sin_novedad_a_tiempo=20,
+                        vn_n_finalizados=400, vn_n_sin_novedad_a_tiempo=390))
+        d = r["sub_scores"]["sin_novedades"]["detalle"]
+        self.assertEqual((d["x"], d["n"], d["ventana_dias"]), (390, 400, 365))
+        self.assertGreater(r["contribuciones"]["sin_novedades"]["aporte"], 0)
+
+    def test_conducta_desde_julio_sin_decaimiento(self):
+        base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5)
+        antes = ev(Metricas("A", "RENT", eventos=[Evento("conducta_inapropiada", date(2026, 6, 15))], **base))
+        jul = ev(Metricas("B", "RENT", eventos=[Evento("conducta_inapropiada", date(2026, 7, 2))], **base))
+        hoy = ev(Metricas("C", "RENT", eventos=[Evento("conducta_inapropiada", HOY)], **base))
+        self.assertEqual(antes["contribuciones"]["conducta_inapropiada"]["aporte"], 0.0)     # antes de julio no cuenta
+        self.assertLess(jul["contribuciones"]["conducta_inapropiada"]["aporte"], 0)
+        self.assertEqual(jul["contribuciones"]["conducta_inapropiada"]["aporte"], hoy["contribuciones"]["conducta_inapropiada"]["aporte"])  # sin decaimiento

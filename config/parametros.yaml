@@ -25,7 +25,9 @@ general:
   # Intensidad de las PÉRDIDAS: SCORE = A + (5−base)·B⁺ − alpha·base·B⁻.
   # alpha = 1.0 → todo al peor deja el score en 0; 0.5 → como mucho pierde la mitad de la base.
   alpha_antecedentes: 1.0
-  # Ventana (días) de las TASAS operativas. Los eventos usan semivida, no ventana.
+  # Ventana (días) por defecto de las TASAS operativas y de la experiencia. Cada
+  # variable puede fijar la suya con `ventana_dias` (manejo de tiempos, 2026-09-15):
+  # lo que queda fuera de la ventana de esa variable no la afecta.
   ventana_tasas_dias: 90
   # Eventos más viejos que esto no se cuentan (su carga ya es ~0 de todos modos).
   ventana_eventos_dias: 730
@@ -67,7 +69,11 @@ eventos:
   # la activación y se apaga con la semivida — el piloto "demuestra" con el tiempo.
   activacion_express: { semivida_dias: 120, tope: 1.0, severidad: 1.0, activo_restringe: false }
   conducta_inapropiada:
-    semivida_dias: 180
+    # Manejo de tiempos: cuentan TODOS los casos confirmados desde que se activó la
+    # revisión (2026-07-01), sin decaimiento (semivida_dias: null). Cuando el módulo
+    # lleve más tiempo, cambiar a una ventana móvil o poner semivida.
+    desde: 2026-07-01
+    semivida_dias: null
     tope: 5.0
     severidad: 1.0
     severidad_por_subtipo: { ABUSIVE_LANGUAGE: 1.0, PROSTITUTION_FRAUD: 1.0 }
@@ -87,6 +93,9 @@ eventos:
 # Los parámetros de tasa aceptan un escalar o un valor por tipo {B2B:, RENT:, B2C:}.
 tasas:
   cancelacion_piloto:
+    # Manejo de tiempos: sólo cancelaciones (y servicios) de los últimos 6 meses.
+    # La extracción trae los conteos de esta ventana en las columnas vc_* de pilotos.csv.
+    ventana_dias: 180
     # CALIBRADO 2026-09-15 con 90 días reales (pilotos con ≥20 servicios):
     #   tasa cancel propia   p20 / p50 / p90   B2B 0.06/0.35/0.86 · RENT 0.19/0.34/0.74 · B2C 0.26/0.42/0.77
     # p0 = mediana; x_score5 = p20 (mejor quinto → 5); x_score0 = p90 (peor décimo → 0).
@@ -97,6 +106,8 @@ tasas:
     x_score0: { B2B: 0.86, RENT: 0.74, B2C: 0.77 }
     x_score5: { B2B: 0.06, RENT: 0.19, B2C: 0.26 }
   sin_novedades:
+    # Manejo de tiempos: último año (columnas vn_* de pilotos.csv).
+    ventana_dias: 365
     p0: 0.90
     m: 10
     x_score0: 0.60
@@ -115,6 +126,8 @@ tasas:
     x_score0: 0.40      # ≤40 % pagados a tiempo → lo peor (−1)
     x_score5: 0.97      # ≥97 % → lo mejor (+1); p0 = 0.85 es el neutro
   cumplimiento_reservas:
+    # Manejo de tiempos: últimos 3 meses (es la ventana con la que se extraen las reservas).
+    ventana_dias: 90
     p0: 0.90
     m: 5
     x_score0: 0.60
