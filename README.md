@@ -25,6 +25,19 @@ sql/extraccion_clickhouse.sql  esqueleto para alimentar data/ desde picapmongopr
 docs/generar_ejemplos.py       regenera las tablas de ejemplo del doc con el motor real
 ```
 
+## Para arrancar (día a día)
+
+```
+cd ~/dev/piloto-score
+./arrancar.sh              # levanta el afinador en http://127.0.0.1:8765 y abre el navegador
+./refrescar_datos.sh       # (opcional) baja los datos reales de ClickHouse; pide la clave una vez
+./arrancar.sh parar        # lo apaga
+./arrancar.sh test         # corre las pruebas
+```
+
+`refrescar_datos.sh` corre las 6 extracciones de `sql/` (y antes el refresh de
+`dashboard_conducta_listas`); acepta números para correr sólo algunas: `./refrescar_datos.sh 01 06`.
+
 ## Uso
 
 ```bash
