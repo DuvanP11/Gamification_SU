@@ -90,7 +90,7 @@ a SQL / Excel / DAX, ver §16):
 | Servicios que canceló | ✓ | ✓ | ✓ | **Negativa** (tasa) | Comportamiento | resta sólo por encima de la referencia p₀ (mediana real por tipo); cancelar menos no suma |
 | Servicios finalizados | ✓ | ✓ | ✓ | Positiva | Base | volumen saturante (experiencia) |
 | **Antigüedad como piloto** | ✓ | ✓ | ✓ | Positiva | Base | días desde la activación, satura a `dias_ref` |
-| **Activación express** | ✓ | ✓ | ✓ | Negativa | Comportamiento | resta y se apaga con semivida desde la activación |
+| **Activación express** (`activation_record_cd = 2`, inferido) | ✓ | ✓ | ✓ | Negativa | Comportamiento | resta y se apaga con semivida desde la activación |
 | Servicios totales por tipo | ✓ | ✓ | ✓ | **Contexto** | — | denominadores + confianza (no puntúa) |
 | Valor declarado mayor | ✓ | – | ✓ | **Mixta** | Comportamiento | balance de cumplimiento × exposición |
 | Sin novedades en tiempos | ✓ | – | ✓ | **Mixta** (tasa) | Comportamiento | balance vs. referencia |

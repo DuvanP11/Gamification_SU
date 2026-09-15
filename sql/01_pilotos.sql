@@ -42,18 +42,16 @@ WITH
            argMax(ifNull(last_name, ''), _sdc_batched_at) AS ape,
            argMax(created_at,            _sdc_batched_at) AS creado,
            argMax(enrollment_approval_at, _sdc_batched_at) AS aprobado,
-           argMax(rating_as_driver__fl,  _sdc_batched_at) AS rating_drv
+           argMax(rating_as_driver__fl,  _sdc_batched_at) AS rating_drv,
+           argMax(activation_record_cd,  _sdc_batched_at) AS record_cd
     FROM picapmongoprod.passengers
     WHERE _id IN (SELECT piloto_id FROM agg)
     GROUP BY _id),
-  -- Activación express COMO PILOTO: sólo el flag del formulario de enrolamiento de conductor.
-  -- passengers.express_activation_for_passenger es la activación express como PASAJERO
-  -- (la traía antes y marcaba al 54 % de los pilotos): se descartó.
-  exp_form AS (
-    SELECT toString(passenger_id) AS pid, max(toUInt8(ifNull(express_activation, false))) AS express
-    FROM picapmongoprod.driver_enrollment_document_forms
-    WHERE passenger_id IN (SELECT piloto_id FROM agg)
-    GROUP BY pid),
+  -- Activación express COMO PILOTO = passengers.activation_record_cd = 2 (INFERIDO 2026-09-15:
+  -- entre pilotos autorizados, el código 2 coincide al 99,97 % con la marca express, casi
+  -- nunca tiene agente asignado y es reciente; 1 = activación con validación, 0 = histórico
+  -- sin registro). express_activation_for_passenger es la vía express del PASAJERO y el
+  -- flag express de driver_enrollment_document_forms es de la plantilla: se descartaron.
   gam AS (
     SELECT driver_id AS gid, final_score, total_score_points, new_final_score_pibox, new_final_score_rent
     FROM picapmongoprod.vw_atr_driver_scoring_with_frauds
@@ -71,7 +69,7 @@ SELECT
   if(g.gid IS NULL OR g.gid = '', NULL, g.total_score_points)        AS gamif_puntos,
   if(g.gid IS NULL OR g.gid = '', NULL, g.final_score)               AS gamif_final,
   toFloat64OrNull(p.rating_drv)                                      AS calif_app,
-  toUInt8(ifNull(e.express, 0))                                      AS activacion_express,
+  toUInt8(ifNull(p.record_cd, 0) = 2)                                AS activacion_express,
   dateDiff('day', toDate(p.creado), today())                         AS dias_antiguedad,
   a.n_finalizados, a.n_cancel_piloto, a.n_cancel_pasajero, a.n_cancel_plataforma,
   0 AS n_otros_atribuibles,
@@ -82,6 +80,5 @@ SELECT
 FROM agg a
 LEFT JOIN pas p ON p._id = a.piloto_id
 LEFT JOIN gam g ON g.gid = a.piloto_id
-LEFT JOIN exp_form e ON e.pid = a.piloto_id
 ORDER BY a.tipo, a.n_finalizados DESC
 FORMAT CSVWithNames
