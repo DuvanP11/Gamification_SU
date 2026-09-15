@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import yaml
 from .engine import evaluar, validar_pesos, TIPOS, EVENTOS
-from .io import cargar_config, cargar_datos, RAIZ
+from .io import cargar_config, cargar_datos, fuentes_de_datos, RAIZ
 
 PUERTO = 8765
 HTML = (Path(__file__).parent / "web.html").read_text(encoding="utf-8")
@@ -32,7 +32,7 @@ class H(BaseHTTPRequestHandler):
             p, w, r = cargar_config()
             self._json({"parametros": p, "pesos": w, "reglas": r,
                         "parametros_yaml": (RAIZ / "config/parametros.yaml").read_text(encoding="utf-8"),
-                        "hoy": date.today().isoformat()}); return
+                        "hoy": date.today().isoformat(), "fuentes": fuentes_de_datos()}); return
         self.send_response(404); self.end_headers()
 
     def do_POST(self):
@@ -42,7 +42,10 @@ class H(BaseHTTPRequestHandler):
                 params = yaml.safe_load(body["parametros_yaml"]) if body.get("parametros_yaml") else cargar_config()[0]
                 pesos, reglas = body["pesos"], cargar_config()[2]
                 hoy = datetime.strptime(body.get("hoy") or date.today().isoformat(), "%Y-%m-%d").date()
-                datos = cargar_datos(Path(body.get("datos") or RAIZ / "data"))
+                fuente = body.get("datos") or "data"
+                if fuente not in fuentes_de_datos():
+                    raise ValueError(f"fuente de datos desconocida: {fuente}")
+                datos = cargar_datos(RAIZ / fuente)
                 avisos = {t: validar_pesos(pesos.get(t, {}), params["general"]["max_participacion_peso"]) for t in TIPOS}
                 res = [evaluar(m, params, pesos, reglas, hoy) for m in datos]
                 self._json({"ok": True, "resultados": res, "avisos": avisos, "parametros": params})

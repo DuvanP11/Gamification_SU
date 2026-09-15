@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .DS_Store
 salida*.json
+# datos reales de pilotos: nunca al repo
+data_real/*.csv

@@ -41,6 +41,7 @@ small{color:var(--muted)}
 </style></head><body>
 <header><h1>Afinador · Score de Pilotos</h1>
  <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
+ <label>Datos <select id="fuente"></select></label>
  <label>Fecha de corte <input id="hoy" type="date"></label>
  <button class="p" id="guardarPesos">Guardar pesos.yaml</button>
  <button class="s" id="guardarParams">Guardar parametros.yaml</button>
@@ -64,6 +65,8 @@ var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invit
 function $(id){return document.getElementById(id)}
 async function init(){
   CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
+  $('fuente').innerHTML=CFG.fuentes.map(function(f){return '<option value="'+f+'">'+(f==='data'?'ficticios (data)':f==='data_real'?'REALES (data_real)':f)+'</option>'}).join('');
+  var pref=CFG.fuentes.indexOf('data_real')>=0?'data_real':'data'; try{pref=localStorage.getItem('fuente')||pref}catch(e){} if(CFG.fuentes.indexOf(pref)>=0)$('fuente').value=pref;
   var a=CFG.parametros.general.alpha_antecedentes; if(a===undefined)a=1; $('alpha').value=a; $('alphaV').textContent=a;
   renderPesos(); recalc();
 }
@@ -84,7 +87,7 @@ function paramsConAlpha(){ // inyecta alpha del slider en el YAML sin reformatea
   return y.replace(/^general:\s*$/m,'general:\n  alpha_antecedentes: '+a);
 }
 async function recalc(){
-  var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value};
+  var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value,datos:$('fuente').value};
   var d=await (await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent='';
   RES=d.resultados; PARAMS=d.parametros; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
@@ -100,11 +103,11 @@ function copiarId(el){var id=el.dataset.id, ok=function(){var b=el.querySelector
 function copiarFallback(t){var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta)}
 function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.push('<i>caso de prueba: '+r.caso+'</i>');
   return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td><td><b>'+r.nombre+'</b><br><small>'+r.piloto_id+' · '+r.tipo+'</small></td>'+
-   '<td>'+idCell(r.driver_id,'piloto')+'<br>'+idCell(r.passenger_id,'pasajero')+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+calif(r.calif_gamification)+'<br>'+calif(r.calif_app)+'</td>'+
+   '<td>'+idCell(r.driver_id||r.piloto_id,'piloto')+(r.passenger_id&&r.passenger_id!==r.driver_id?'<br>'+idCell(r.passenger_id,'pasajero'):'')+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+calif(r.calif_gamification)+(r.gamif_puntos!=null?' <small title="total_score_points · final_score">('+Math.round(r.gamif_puntos)+' pts'+(r.gamif_final!=null?' · '+r.gamif_final:'')+')</small>':'')+'<br>'+calif(r.calif_app)+'</td>'+
    '<td class="num"><b style="font-size:15px">'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<br><small>score '+fmt(r.score_comportamental)+'</small>':'')+'</td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><br><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
    '<td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
 function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
-  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID piloto<br>ID pasajero</th><th>Activación piloto<br>Activación pasajero</th><th class="num">Gamification<br>App</th><th class="num">Score</th><th>Banda</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
+  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID</th><th>Activación piloto<br>Activación pasajero</th><th class="num">Gamification<br>App</th><th class="num">Score</th><th>Banda</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
 function renderTabla(){
   var t=$('tipo').value, todos=RES.filter(function(r){return !t||r.tipo===t});
   var con=todos.filter(function(r){return r.score_final!=null}).sort(function(a,b){return b.score_final-a.score_final||b.n_aplicables-a.n_aplicables});
@@ -187,7 +190,7 @@ function renderDetalle(k){
   if(sind.length) h+='<div class="nota">Sin dato para evaluar (fuera del cálculo): '+sind.join(', ')+'.</div>';
   $('detalle').innerHTML=h;
 }
-$('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('recalc').onclick=recalc;
+$('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('fuente').onchange=function(){try{localStorage.setItem('fuente',$('fuente').value)}catch(e){} SEL=null; $('detalle').innerHTML='<h2>Desglose</h2><small>Clic en un piloto.</small>'; recalc()}; $('recalc').onclick=recalc;
 $('alpha').oninput=function(){$('alphaV').textContent=$('alpha').value;recalcDebounced()};
 $('guardarPesos').onclick=async function(){var d=await (await fetch('/api/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pesos:PESOS})})).json();$('msg').textContent=d.ok?'✓ pesos.yaml guardado':d.error};
 $('guardarParams').onclick=async function(){var d=await (await fetch('/api/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parametros_yaml:paramsConAlpha()})})).json();$('msg').textContent=d.ok?'✓ parametros.yaml guardado':d.error;if(d.ok)$('params').value=paramsConAlpha()};

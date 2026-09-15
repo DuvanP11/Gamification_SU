@@ -66,3 +66,19 @@ Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependenci
 `data/recaudos.csv` (un recaudo no abonado en el momento por fila: `fecha_recaudo`,
 `fecha_abono` vacío si sigue sin pagar) y `data/reglas_activas.csv` (reglas disparadas). Columnas vacías = dato no disponible (≠ 0), salvo los
 conteos básicos de servicios, que vacíos valen 0.
+
+## Datos reales (ClickHouse → `data_real/`)
+
+Tres consultas, una por comando (piden la clave de `dperilla`); cada una deja su CSV en
+`data_real/`. Después `python3 -m score --datos data_real --top 10` o elegir
+**REALES (data_real)** en el afinador.
+
+```
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/01_pilotos.sql -o /Users/pibox/dev/piloto-score/data_real/pilotos.csv
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/02_eventos.sql -o /Users/pibox/dev/piloto-score/data_real/eventos.csv
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/03_recaudos.sql -o /Users/pibox/dev/piloto-score/data_real/recaudos.csv
+```
+
+Los CSV reales están en `.gitignore`. Supuestos de la extracción (a confirmar) están
+comentados al inicio de cada `sql/0*.sql`; `sql/00_descubrir_suspensiones.sql` sirve
+para completar el histórico de suspensiones e invitaciones.

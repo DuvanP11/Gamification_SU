@@ -121,8 +121,10 @@ class Metricas:
     passenger_id: str = ""
     activado_piloto: date | None = None
     activado_pasajero: date | None = None
-    calif_gamification: float | None = None   # calificación del gamification (BD ClickHouse existente)
-    calif_app: float | None = None            # calificación en la app
+    calif_gamification: float | None = None   # gamification (vw_atr_driver_scoring_with_frauds: new_final_score_pibox/rent)
+    gamif_puntos: float | None = None         # gamification: total_score_points
+    gamif_final: float | None = None          # gamification: final_score
+    calif_app: float | None = None            # calificación en la app (passengers.rating_as_driver__fl)
     dias_antiguedad: int | None = None
     n_finalizados: int = 0
     n_cancel_piloto: int = 0
@@ -489,7 +491,8 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
         "driver_id": m.driver_id, "passenger_id": m.passenger_id,
         "activado_piloto": m.activado_piloto.isoformat() if m.activado_piloto else None,
         "activado_pasajero": m.activado_pasajero.isoformat() if m.activado_pasajero else None,
-        "calif_gamification": m.calif_gamification, "calif_app": m.calif_app,
+        "calif_gamification": m.calif_gamification, "gamif_puntos": m.gamif_puntos, "gamif_final": m.gamif_final,
+        "calif_app": m.calif_app,
         "caso": m.caso, "observaciones": obs,
         "score_comportamental": red(sc),
         "score_final": red(reg["score_final"]),

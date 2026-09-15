@@ -20,7 +20,7 @@ def cargar_config(raiz: Path = RAIZ) -> tuple[dict, dict, dict]:
 
 def _int(v) -> int | None:
     v = (v or "").strip()
-    return None if v == "" else int(float(v))
+    return None if v in ("", "\\N", "NULL", "null") else int(float(v))
 
 
 def _fecha(v) -> date:
@@ -29,7 +29,7 @@ def _fecha(v) -> date:
 
 def _fecha_opc(v) -> date | None:
     v = (v or "").strip()
-    return _fecha(v) if v else None
+    return _fecha(v) if v and v not in ("\\N", "NULL", "1970-01-01") else None
 
 
 def _dt(v) -> datetime | None:
@@ -41,7 +41,9 @@ def _dt(v) -> datetime | None:
 
 def _float(v) -> float | None:
     v = (v or "").strip()
-    return None if v == "" else float(v)
+    if v in ("", "\\N", "NULL", "null", "nan"):
+        return None
+    return float(v)
 
 
 CAMPOS_INT = ["dias_antiguedad", "n_finalizados", "n_cancel_piloto", "n_cancel_pasajero",
@@ -50,6 +52,11 @@ CAMPOS_INT = ["dias_antiguedad", "n_finalizados", "n_cancel_piloto", "n_cancel_p
               "n_res_cancel_atrib", "n_res_no_atrib"]
 CAMPOS_CERO_POR_DEFECTO = {"n_finalizados", "n_cancel_piloto", "n_cancel_pasajero",
                            "n_cancel_plataforma", "n_otros_atribuibles"}
+
+
+def fuentes_de_datos(raiz: Path = RAIZ) -> list[str]:
+    """Carpetas data*/ con un pilotos.csv (ficticios, reales, …)."""
+    return sorted(d.name for d in raiz.glob("data*") if (d / "pilotos.csv").exists())
 
 
 def cargar_datos(dir_datos: Path) -> list[Metricas]:
@@ -87,7 +94,8 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
                   "driver_id": (r.get("driver_id") or "").strip(), "passenger_id": (r.get("passenger_id") or "").strip(),
                   "activado_piloto": _fecha_opc(r.get("activado_piloto")),
                   "activado_pasajero": _fecha_opc(r.get("activado_pasajero")),
-                  "calif_gamification": _float(r.get("calif_gamification")), "calif_app": _float(r.get("calif_app"))}
+                  "calif_gamification": _float(r.get("calif_gamification")), "calif_app": _float(r.get("calif_app")),
+                  "gamif_puntos": _float(r.get("gamif_puntos")), "gamif_final": _float(r.get("gamif_final"))}
             for c in CAMPOS_INT:
                 v = _int(r.get(c))
                 if v is None and c in CAMPOS_CERO_POR_DEFECTO:
