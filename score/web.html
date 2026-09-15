@@ -66,7 +66,7 @@ small{color:var(--muted)}
 var CFG=null, PESOS=null, RANK=null, NFILAS=0, SEL=null, VARS=[], DET={};
 var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','conducta_inapropiada'];
 var BASE=['finalizados','antiguedad'];
-var MIXTAS=['cancelacion_piloto','sin_novedades','recaudo_24h','alto_valor','cumplimiento_reservas'];
+var MIXTAS=['sin_novedades','recaudo_24h','alto_valor','cumplimiento_reservas'];
 function bloqueDe(v){return BASE.indexOf(v)>=0?'base':MIXTAS.indexOf(v)>=0?'mixta':'negativa'}
 function esPenal(v){return BASE.indexOf(v)<0}
 function $(id){return document.getElementById(id)}
@@ -157,7 +157,7 @@ function renderTabla(){
   marcarSel();
 }
 function marcarSel(){Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.className=tr.dataset.k===SEL?'sel':''})}
-var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],conducta_inapropiada:['Conducta inapropiada confirmada','antecedente'],cancelacion_piloto:['Cancelaciones propias','mixta'],finalizados:['Experiencia (servicios finalizados)','base'],antiguedad:['Antigüedad como piloto','base'],activacion_express:['Activación express','negativa'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
+var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],conducta_inapropiada:['Conducta inapropiada confirmada','antecedente'],cancelacion_piloto:['Cancelaciones propias','negativa'],finalizados:['Experiencia (servicios finalizados)','base'],antiguedad:['Antigüedad como piloto','base'],activacion_express:['Activación express','negativa'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
 var PARAMS=null;
 function pct(x,d){return (x*100).toFixed(d==null?0:d).replace('.',',')+' %'}
 function dias(n){if(n>=365){var a=n/365;return a%1<0.1?Math.round(a)+(Math.round(a)===1?' año':' años'):a.toFixed(1).replace('.',',')+' años'}return n>=60?Math.round(n/30)+' meses':n+' días'}
@@ -180,7 +180,7 @@ function explicar(v,s,r){
     return {que:'Entró por <b>activación express</b> hace '+d.dias_desde_activacion+' días.',como:'Descuenta completo el día de la activación y se apaga a la mitad cada '+dias(c.semivida_dias)+' (hoy pesa '+d.carga+' de '+d.tope+').'};}
   if(v==='cancelacion_piloto'){var c=P.tasas[v];
     return {que:'Canceló <b>'+d.x+' de '+d.n+'</b> servicios que dependían de él ('+pct(d.tasa_cruda,1)+'). '+(d.excluidos_no_atribuibles?'No se le cuentan '+d.excluidos_no_atribuibles+' cancelados por el pasajero o la plataforma.':''),
-            como:'Ajustado por volumen queda en '+pct(d.tasa_ajustada,1)+'. La referencia de su tipo es '+pct(d.referencia_p0)+': por debajo suma, por encima resta ('+pct(pt(c,'x_score5'))+' = lo mejor, '+pct(pt(c,'x_score0'))+' = lo peor).'};}
+            como:'Ajustado por volumen queda en '+pct(d.tasa_ajustada,1)+'. La referencia de su tipo es '+pct(d.referencia_p0)+': hasta ahí no resta (y cancelar menos NO suma); por encima resta, hasta el máximo en '+pct(pt(c,'x_score0'))+'.'};}
   if(v==='finalizados'){
     return {que:'<b>'+d.n+'</b> servicios finalizados en la ventana'+(d.tasa_finalizacion!=null?' (terminó el '+pct(d.tasa_finalizacion)+' de los que dependían de él)':'')+'.',
             como:'La experiencia suma rápido al principio y se llena a los '+d.n_ref+' servicios; de ahí en adelante no da más puntos.'};}
@@ -244,7 +244,7 @@ async function renderDetalle(k){
   Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='base')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
   h+='</div><div class="sec"><h3>Comportamiento (suma o resta según la referencia)</h3><p class="intro">La misma variable suma si el piloto está mejor que el promedio de su tipo y resta si está peor. Igual que el promedio = 0.</p>';
   Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='mixta')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
-  h+='</div><div class="sec"><h3>Antecedentes y activación (sólo restan)</h3><p class="intro">Un historial limpio no suma: sólo resta cuando hay eventos, y cada evento pierde peso con el tiempo.</p>';
+  h+='</div><div class="sec"><h3>Sólo restan: cancelaciones, antecedentes y activación</h3><p class="intro">Nada de esto suma: cancelar como el promedio o menos vale 0, y un historial limpio vale 0. Cada evento pierde peso con el tiempo.</p>';
   Object.keys(r.sub_scores).forEach(function(v){var s=r.sub_scores[v];if(bloqueDe(v)!=='negativa')return;if(s.score==null){(s.motivo==='no_aplica'?noap:sind).push(NOMBRES[v][0]);return}h+=filaHTML(v,s,r.contribuciones[v],r)});
   h+='</div>';
   if(noap.length) h+='<div class="nota">No aplican en '+r.tipo+' (fuera del cálculo, no cuentan como 0): '+noap.join(', ')+'.</div>';

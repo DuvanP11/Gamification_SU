@@ -24,12 +24,13 @@ EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
 #   BASE      → sólo suman: experiencia y antigüedad. Es la confianza que el piloto se
 #               gana con el tiempo (0 → base_max). Un piloto recién activado vale 0.
 #   MIXTAS    → la MISMA variable suma o resta: mejor que la referencia poblacional
-#               suma, peor resta (cancelación, sin novedades, recaudo, alto valor, reservas).
-#   NEGATIVAS → sólo restan: antecedentes y activación express.
+#               suma, peor resta (sin novedades, recaudo, alto valor, reservas).
+#   NEGATIVAS → sólo restan: antecedentes, activación express y cancelación propia
+#               (cancelar como el promedio o menos = 0; más que la referencia resta).
 #   SCORE = clip( BASE + (5 − base_max)·B⁺ − base_max·B⁻ , 0, 5 )
 BASE = ("finalizados", "antiguedad")
-MIXTAS = ("cancelacion_piloto", "sin_novedades", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
-NEGATIVAS = EVENTOS + ("activacion_express",)
+MIXTAS = ("sin_novedades", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
+NEGATIVAS = EVENTOS + ("activacion_express", "cancelacion_piloto")
 # compatibilidad con código que agrupa por "positivas / penalizaciones"
 POSITIVAS = BASE
 PENALIZACIONES = MIXTAS + NEGATIVAS
@@ -329,7 +330,8 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         s_neutro = rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s_desemp = rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax)
         s = s_neutro + expo * (s_desemp - s_neutro)
-        out[var] = {"score": s, "neutro": s_neutro, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
+        # pesa en proporción a la exposición: sin servicios de alto valor no diluye a las demás
+        out[var] = {"score": s, "neutro": s_neutro, "peso_factor": expo, "detalle": {"n_alto_valor": n_av, "ok": ok, "proporcion": round(prop, 4),
                                             "exposicion": round(expo, 4), "cumplimiento_ajustado": round(adj, 4),
                                             "score_neutro": round(s_neutro, 3), "score_desempeno": round(s_desemp, 3)}}
 
@@ -454,17 +456,26 @@ def score_comportamental(subs: dict[str, dict], pesos_tipo: dict[str, float],
     D, den_b = _promedio_ponderado(subs, pesos_tipo, BASE)
     if D is None:
         return None, {}
+
+    def wf(var):   # peso efectivo = peso × factor propio de la variable (p. ej. exposición en alto valor)
+        r = subs.get(var) or {}
+        return (pesos_tipo.get(var, 0) or 0) * float(r.get("peso_factor", 1.0))
+
+    den_mix = sum(wf(v) for v in MIXTAS if (subs.get(v) or {}).get("score") is not None)
+    # Donde no hay mixtas con dato (p. ej. Rent) no existe el margen "+mejor": la base
+    # llega hasta 5 para que el techo siga siendo alcanzable.
+    if den_mix <= 0:
+        base_max = score_max
     A = base_max * D / score_max
     contrib = {}
     for var in BASE:
         r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
         if r and r.get("score") is not None and w > 0:
             contrib[var] = {"bloque": "base", "peso_efectivo": w / den_b, "aporte": base_max * (w / den_b) * r["score"] / score_max}
-    den_mix = sum((pesos_tipo.get(v, 0) or 0) for v in MIXTAS if (subs.get(v) or {}).get("score") is not None)
-    den_all = sum((pesos_tipo.get(v, 0) or 0) for v in MIXTAS + NEGATIVAS if (subs.get(v) or {}).get("score") is not None)
+    den_all = sum(wf(v) for v in MIXTAS + NEGATIVAS if (subs.get(v) or {}).get("score") is not None)
     Bp = Bm = 0.0
     for var in MIXTAS + NEGATIVAS:
-        r = subs.get(var); w = pesos_tipo.get(var, 0) or 0
+        r = subs.get(var); w = wf(var)
         if not r or r.get("score") is None or w <= 0:
             continue
         neutro = r.get("neutro", score_max if var in NEGATIVAS else score_max)

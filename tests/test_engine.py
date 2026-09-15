@@ -196,17 +196,27 @@ if __name__ == "__main__":
 
 class BloquesV04(unittest.TestCase):
     """v0.4: base (experiencia+antigüedad) + mixtas que suman o restan + negativas; el nuevo arranca en 0."""
-    def test_mixta_suma_o_resta_segun_la_referencia(self):
+    def test_cancelacion_solo_resta(self):
         base = dict(dias_antiguedad=400, n_finalizados=100)
         ref = ev(Metricas("R", "RENT", n_cancel_piloto=int(100 * 0.34 / 0.66), **base))   # ≈ mediana RENT (34 %)
         mejor = ev(Metricas("M", "RENT", n_cancel_piloto=0, **base))
         peor = ev(Metricas("P", "RENT", n_cancel_piloto=150, **base))
-        self.assertGreater(mejor["contribuciones"]["cancelacion_piloto"]["aporte"], 0)
-        self.assertLess(peor["contribuciones"]["cancelacion_piloto"]["aporte"], 0)
+        self.assertEqual(mejor["contribuciones"]["cancelacion_piloto"]["aporte"], 0.0)        # cancelar menos NO suma
         self.assertAlmostEqual(ref["contribuciones"]["cancelacion_piloto"]["aporte"], 0, delta=0.05)
-        self.assertGreater(mejor["score_final"], ref["score_final"]); self.assertLess(peor["score_final"], ref["score_final"])
-        # igual que la referencia → el score es la base ganada
+        self.assertLess(peor["contribuciones"]["cancelacion_piloto"]["aporte"], 0)             # cancelar más resta
+        self.assertEqual(mejor["score_final"], ref["score_final"]); self.assertLess(peor["score_final"], ref["score_final"])
+        # en Rent no hay mixtas: el score de un piloto sin problemas es su base ganada
         self.assertAlmostEqual(ref["score_final"], round(ref["contribuciones"]["_bloques"]["A_base"], 1), delta=0.1)
+
+    def test_mixta_suma_o_resta_segun_la_referencia(self):
+        base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5)
+        ref = ev(Metricas("R", "B2B", n_sin_novedad_a_tiempo=90, **base))     # = referencia 90 %
+        mejor = ev(Metricas("M", "B2B", n_sin_novedad_a_tiempo=100, **base))
+        peor = ev(Metricas("P", "B2B", n_sin_novedad_a_tiempo=60, **base))
+        self.assertGreater(mejor["contribuciones"]["sin_novedades"]["aporte"], 0)
+        self.assertLess(peor["contribuciones"]["sin_novedades"]["aporte"], 0)
+        self.assertAlmostEqual(ref["contribuciones"]["sin_novedades"]["aporte"], 0, delta=0.05)
+        self.assertGreater(mejor["score_final"], ref["score_final"]); self.assertLess(peor["score_final"], ref["score_final"])
 
     def test_las_demas_mixtas_tambien(self):
         from score.engine import Recaudo
