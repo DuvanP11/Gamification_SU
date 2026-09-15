@@ -463,9 +463,9 @@ aditivo original este mismo piloto daba 4.1 BUENO.
 | recaudo_24h | — | — | — | — | *no_aplica* |
 | cumplimiento_reservas | — | — | — | — | *no_aplica* |
 
-Cómo se lee: D = 4.6 (cancelación 14 %, que tras la calibración con datos reales queda
-por debajo de la mediana de Rent, y experiencia alta); P = 0.26·1.0 (suspensiones al
-tope) + 0.15·0.94 (IMEI reciente) = 0.40 → score 4.6 · 0.60 = 2.9 ACEPTABLE. Además el
+Cómo se lee: D = 4.87 (cancelación 14 %, que tras la calibración con datos reales queda
+por debajo de la mediana de Rent, y experiencia alta); P = 0.265·1.0 (suspensiones al
+tope) + 0.147·0.97 (IMEI reciente) = 0.41 → score 4.87 · 0.59 = 2.9 ACEPTABLE. Además el
 IMEI activo lo deja RESTRINGIDO y la regla `imei_compartido` lo deja **BLOQUEADO**: el
 score se calcula y se muestra, pero no habilita nada.
 
