@@ -50,12 +50,12 @@ def main(argv=None):
                                    (f"{N} PEORES", con[max(N, len(con) - N):] if len(con) > N else [], max(N, len(con) - N))):
             if not grupo: continue
             print(f"\n── {titulo} ──")
-            print(f"{'#':>3} {'nombre':24} {'tipo':5} {'id piloto':10} {'id pasajero':11} {'act.piloto':10} {'act.pasaj.':10} {'gamif':>5} {'app':>4} {'final':>5} {'banda':12}  observaciones")
+            print(f"{'#':>3} {'nombre':24} {'tipo':5} {'id piloto':24} {'id pasajero':24} {'act.piloto':10} {'act.pasaj.':10} {'gamif':>5} {'app':>4} {'final':>5} {'banda':12}  observaciones")
             for i, r in enumerate(grupo):
                 obs = "; ".join(r["observaciones"]) or "—"
                 g = "—" if r["calif_gamification"] is None else f"{r['calif_gamification']:.1f}"
                 ap_ = "—" if r["calif_app"] is None else f"{r['calif_app']:.1f}"
-                print(f"{off+i+1:>3} {r['nombre'][:24]:24} {r['tipo']:5} {r['driver_id'][:8]+'…':10} {r['passenger_id'][:8]+'…':11} {(r['activado_piloto'] or '—'):10} {(r['activado_pasajero'] or '—'):10} {g:>5} {ap_:>4} {r['score_final']:>5.1f} {r['banda'][:12]:12}  {obs}")
+                print(f"{off+i+1:>3} {r['nombre'][:24]:24} {r['tipo']:5} {r['driver_id']:24} {r['passenger_id']:24} {(r['activado_piloto'] or '—'):10} {(r['activado_pasajero'] or '—'):10} {g:>5} {ap_:>4} {r['score_final']:>5.1f} {r['banda'][:12]:12}  {obs}")
         return
     print(f"{'piloto':8} {'tipo':5} {'nombre':22} {'score':>5} {'final':>5} {'banda':22} {'vig.':12} {'conf':>4} {'n':>4}  estado / alertas / observaciones")
     for r in res:

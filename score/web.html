@@ -21,6 +21,7 @@ button.p{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:6px
 .aviso{color:var(--warn);font-size:12px;margin-top:6px}.err{color:var(--bad)}
 .bloques{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:12px}.bloques div{background:#f3f0ff;border-radius:8px;padding:6px 10px}
 small{color:var(--muted)}
+.idc{font-family:ui-monospace,Menlo,monospace;font-size:11px;cursor:copy;user-select:all;white-space:nowrap}.idc:hover{color:var(--acc)}.idc b{color:var(--acc);font-size:12px}
 .resumen{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin:6px 0 14px}
 .paso{background:#f3f0ff;border-radius:10px;padding:10px 14px;min-width:150px;flex:1}
 .paso .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.paso .v{font-size:22px;font-weight:800;margin-top:2px}.paso .t{font-size:11px;color:var(--muted);margin-top:2px}
@@ -92,10 +93,14 @@ async function recalc(){
 function fmt(x){return x==null?'—':Number(x).toFixed(1)}
 function fecha(d){return d?d.slice(0,10):'—'}
 function calif(x){return x==null?'—':Number(x).toFixed(1)}
-function idCorto(id){return id?'<span title="'+id+'" style="font-family:ui-monospace,Menlo,monospace;font-size:11px">'+id.slice(0,8)+'…</span>':'—'}
+function idCell(id,rotulo){if(!id)return '<small>'+rotulo+': —</small>';
+  return '<span class="idc" data-id="'+id+'" title="Clic para copiar el ID de '+rotulo+'"><small>'+rotulo+'</small> '+id+' <b>⧉</b></span>'}
+function copiarId(el){var id=el.dataset.id, ok=function(){var b=el.querySelector('b'); b.textContent='✓'; setTimeout(function(){b.textContent='⧉'},1200)};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(id).then(ok,function(){copiarFallback(id);ok()})}else{copiarFallback(id);ok()}}
+function copiarFallback(t){var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta)}
 function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.push('<i>caso de prueba: '+r.caso+'</i>');
   return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td><td><b>'+r.nombre+'</b><br><small>'+r.piloto_id+' · '+r.tipo+'</small></td>'+
-   '<td>'+idCorto(r.driver_id)+'<br>'+idCorto(r.passenger_id)+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+calif(r.calif_gamification)+'<br>'+calif(r.calif_app)+'</td>'+
+   '<td>'+idCell(r.driver_id,'piloto')+'<br>'+idCell(r.passenger_id,'pasajero')+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num">'+calif(r.calif_gamification)+'<br>'+calif(r.calif_app)+'</td>'+
    '<td class="num"><b style="font-size:15px">'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<br><small>score '+fmt(r.score_comportamental)+'</small>':'')+'</td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><br><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
    '<td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
 function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
@@ -109,7 +114,8 @@ function renderTabla(){
   $('rankInfo').textContent='· '+con.length+' pilotos con score'+(sin.length?' · '+sin.length+' sin score (0 servicios)':'')+(t?' · '+t:'')+' · clic en una fila para ver el desglose';
   $('ranking').innerHTML=bloqueRank('Top 10 mejores',top,0,'#15803d')+bloqueRank('10 del medio',medio,medio.length?iniM:0,'#ca8a04')+bloqueRank('10 peores',peores,con.length-peores.length,'#dc2626')
     +(sin.length?'<div class="nota">Sin score (0 servicios en la ventana): '+sin.map(function(r){return r.nombre+' ('+r.piloto_id+')'}).join(', ')+'</div>':'');
-  Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.onclick=function(){SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
+  Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.onclick=function(ev){if(ev.target.closest&&ev.target.closest('.idc'))return;SEL=tr.dataset.k;renderTabla();renderDetalle(SEL)}});
+  Array.prototype.forEach.call($('ranking').querySelectorAll('.idc'),function(el){el.onclick=function(ev){ev.stopPropagation();copiarId(el)}});
 }
 var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
 var PARAMS=null;
