@@ -97,13 +97,21 @@ for tipo in ("B2B", "RENT", "B2C"):
         if R.random() < 0.05: reglas.append(dict(piloto_id=pid, regla=R.choice(["cancelaciones_en_racha", "fake_gps", "cuenta_nueva_retiro_alto"])))
         filas.append(contexto(row, tipo))
 
+# Conducta inapropiada confirmada: RNG aparte para no mover el resto de los datos.
+R2 = random.Random(7)
+for row in filas:
+    if row["piloto_id"] in ("P004",) or (row["piloto_id"] > "P100" and R2.random() < 0.06):
+        for _ in range(R2.choice([1, 1, 1, 2, 3])):
+            eventos.append(dict(piloto_id=row["piloto_id"], tipo_evento="conducta_inapropiada", fecha=fecha_hace(R2.randint(5, 400)), activo=0, severidad="",
+                                subtipo=R2.choice(["ABUSIVE_LANGUAGE", "ABUSIVE_LANGUAGE", "PROSTITUTION_FRAUD"])))
+
 def escribir(nombre, cols, rows):
     with open(D / nombre, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
         for r in rows: w.writerow({c: ("" if r.get(c) is None else r.get(c)) for c in cols})
 
 escribir("pilotos.csv", COLS, filas)
-escribir("eventos.csv", ["piloto_id", "tipo_evento", "fecha", "activo", "severidad"], eventos)
+escribir("eventos.csv", ["piloto_id", "tipo_evento", "fecha", "activo", "severidad", "subtipo"], eventos)
 escribir("recaudos.csv", ["piloto_id", "fecha_recaudo", "fecha_abono"], recaudos)
 escribir("reglas_activas.csv", ["piloto_id", "regla"], reglas)
 print(f"{len(filas)} pilotos, {len(eventos)} eventos, {len(recaudos)} recaudos, {len(reglas)} reglas")

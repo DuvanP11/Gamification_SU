@@ -64,7 +64,7 @@ small{color:var(--muted)}
 </main>
 <script>
 var CFG=null, PESOS=null, RANK=null, NFILAS=0, SEL=null, VARS=[], DET={};
-var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei'];
+var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','conducta_inapropiada'];
 function $(id){return document.getElementById(id)}
 async function init(){
   CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
@@ -148,7 +148,7 @@ function renderTabla(){
   marcarSel();
 }
 function marcarSel(){Array.prototype.forEach.call($('ranking').querySelectorAll('tr[data-k]'),function(tr){tr.className=tr.dataset.k===SEL?'sel':''})}
-var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
+var NOMBRES={suspension_piloto:['Suspensiones como piloto','antecedente'],suspension_pasajero:['Suspensiones como pasajero','antecedente'],invitacion_pibox:['Invitaciones Pibox','antecedente'],invitacion_rent:['Invitaciones Rent','antecedente'],expulsion:['Expulsiones','antecedente'],baneo_imei:['Baneo de IMEI','antecedente'],conducta_inapropiada:['Conducta inapropiada confirmada','antecedente'],cancelacion_piloto:['Cancelaciones propias','desempeño'],finalizados:['Experiencia (servicios finalizados)','desempeño'],sin_novedades:['Servicios sin novedad y a tiempo','desempeño'],alto_valor:['Responsabilidad en alto valor','desempeño'],cumplimiento_reservas:['Cumplimiento de reservas','desempeño'],recaudo_24h:['Recaudo pagado en 24 h hábiles','desempeño']};
 var PARAMS=null;
 function pct(x,d){return (x*100).toFixed(d==null?0:d).replace('.',',')+' %'}
 function dias(n){if(n>=365){var a=n/365;return a%1<0.1?Math.round(a)+(Math.round(a)===1?' año':' años'):a.toFixed(1).replace('.',',')+' años'}return n>=60?Math.round(n/30)+' meses':n+' días'}

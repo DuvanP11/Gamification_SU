@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 TIPOS = ("B2B", "RENT", "B2C")
 
 EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
-           "invitacion_rent", "expulsion", "baneo_imei")
+           "invitacion_rent", "expulsion", "baneo_imei", "conducta_inapropiada")
 
 
 # ────────────────────────────── primitivas ──────────────────────────────
@@ -98,6 +98,7 @@ class Evento:
     fecha: date
     activo: bool = False # vigente hoy (restringe si el tipo lo indica)
     severidad: float | None = None  # override puntual; None = la del parámetro
+    subtipo: str = ""    # p. ej. classification de conducta (ABUSIVE_LANGUAGE / PROSTITUTION_FRAUD)
 
 
 @dataclass
@@ -212,7 +213,9 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             edad = (hoy - e.fecha).days
             if edad > g["ventana_eventos_dias"]:
                 continue
-            sev = cfg["severidad"] if e.severidad is None else e.severidad
+            sev = e.severidad
+            if sev is None:
+                sev = (cfg.get("severidad_por_subtipo") or {}).get(e.subtipo, cfg["severidad"])
             edades.append(edad)
             carga += sev * decaimiento(edad, cfg["semivida_dias"])
         s = sub_score_evento(carga, cfg["tope"], smax)
@@ -439,7 +442,8 @@ def observaciones(m: Metricas, subs: dict, vigencia: str, n_min: int, restriccio
                  "suspension_pasajero": ("Suspensión como pasajero", "suspensiones como pasajero"),
                  "invitacion_pibox": ("Invitación Pibox", "invitaciones Pibox"),
                  "invitacion_rent": ("Invitación Rent", "invitaciones Rent"),
-                 "expulsion": ("Expulsión", "expulsiones"), "baneo_imei": ("Baneo de IMEI", "baneos de IMEI")}
+                 "expulsion": ("Expulsión", "expulsiones"), "baneo_imei": ("Baneo de IMEI", "baneos de IMEI"),
+                 "conducta_inapropiada": ("Conducta inapropiada confirmada", "casos de conducta inapropiada confirmados")}
     if vigencia == "PROVISIONAL":
         obs.append(f"Piloto con pocos servicios en la ventana: {m.n_aplicables} de {n_min} necesarios (score provisional)")
     for r in restricciones:

@@ -49,6 +49,18 @@ eventos:
   invitacion_rent:    { semivida_dias: 90,  tope: 4.0, severidad: 1.0, activo_restringe: false }
   expulsion:          { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
   baneo_imei:         { semivida_dias: 365, tope: 1.0, severidad: 1.0, activo_restringe: true }
+  # Acoso / hostigamiento (módulo Conducta Inapropiada del portal). Sólo entran los
+  # casos que el analista marcó "Con Novedad" (grosería/acoso CONFIRMADO), uno por
+  # día de caso, desde que se activó la revisión. Moderado a propósito: tope 5 =
+  # hacen falta cinco casos confirmados recientes para que esta variable llegue a 0;
+  # un caso de hoy descuenta ~1/5 de su peso. severidad_por_subtipo permite pesar
+  # distinto el lenguaje abusivo y el acoso sexual (hoy igual, a definir con Riesgo).
+  conducta_inapropiada:
+    semivida_dias: 180
+    tope: 5.0
+    severidad: 1.0
+    severidad_por_subtipo: { ABUSIVE_LANGUAGE: 1.0, PROSTITUTION_FRAUD: 1.0 }
+    activo_restringe: false
 
 # ---------------------------------------------------------------------------
 # VARIABLES DE TASA. tasa_ajustada = (x + m·p0) / (n + m)   (suavizado bayesiano)
@@ -138,6 +150,7 @@ aplicabilidad:
   invitacion_rent:       [B2B, RENT, B2C]
   expulsion:             [B2B, RENT, B2C]
   baneo_imei:            [RENT]
+  conducta_inapropiada:  [B2B, RENT, B2C]
   recaudo_24h:           [B2B]
   cancelacion_piloto:    [B2B, RENT, B2C]
   finalizados:           [B2B, RENT, B2C]

@@ -75,7 +75,8 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
                 sev = (r.get("severidad") or "").strip()
                 ev = Evento(tipo=r["tipo_evento"], fecha=_fecha(r["fecha"]),
                             activo=((r.get("activo") or "0").strip() in ("1", "true", "True")),
-                            severidad=float(sev) if sev else None)
+                            severidad=float(sev) if sev else None,
+                            subtipo=(r.get("subtipo") or "").strip())
                 if (r.get("origen") or "").strip() == "flag":
                     flags.setdefault(r["piloto_id"], []).append(ev)
                 else:

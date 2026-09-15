@@ -23,6 +23,10 @@ reglas:
     efecto: alerta
     mide_score: cancelacion_piloto
     descripcion: "≥3 cancelaciones en 24 h — el score ya lo castiga vía tasa"
+  conducta_inapropiada_spike:
+    efecto: alerta
+    mide_score: conducta_inapropiada
+    descripcion: "Alerta del portal por pico de chats marcados — el score ya descuenta los casos confirmados"
   fake_gps:
     efecto: tope
     tope: 1.5

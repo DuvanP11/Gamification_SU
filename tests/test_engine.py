@@ -225,3 +225,29 @@ class DocumentosTest(unittest.TestCase):
             self.assertEqual(len(ms["Y"].eventos), 1)   # sin historial: el flag se conserva
         finally:
             shutil.rmtree(d)
+
+
+class ConductaTest(unittest.TestCase):
+    def test_conducta_confirmada_descuenta_moderado_y_en_los_tres_tipos(self):
+        for tipo in TIPOS:
+            base = dict(n_finalizados=100, n_cancel_piloto=5)
+            limpio = ev(Metricas("L", tipo, **base))
+            uno = ev(Metricas("1", tipo, eventos=[Evento("conducta_inapropiada", HOY, subtipo="ABUSIVE_LANGUAGE")], **base))
+            cinco = ev(Metricas("5", tipo, eventos=[Evento("conducta_inapropiada", HOY)] * 5, **base))
+            viejo = ev(Metricas("V", tipo, eventos=[Evento("conducta_inapropiada", date(2025, 3, 15))], **base))
+            self.assertLess(uno["score_final"], limpio["score_final"], tipo)
+            # moderado: un caso de hoy quita menos del 5 % del score
+            self.assertGreater(uno["score_final"], limpio["score_final"] * 0.95, tipo)
+            self.assertLess(cinco["score_final"], uno["score_final"], tipo)
+            self.assertEqual(cinco["sub_scores"]["conducta_inapropiada"]["score"], 0.0, tipo)
+            self.assertGreater(viejo["score_final"], uno["score_final"], tipo)   # decae con el tiempo
+            self.assertEqual(uno["estado"], "OK", tipo)                          # no restringe
+            self.assertTrue(any("Conducta inapropiada confirmada" in o for o in uno["observaciones"]), tipo)
+
+    def test_severidad_por_subtipo(self):
+        from copy import deepcopy
+        P = deepcopy(PARAMS); P["eventos"]["conducta_inapropiada"]["severidad_por_subtipo"]["PROSTITUTION_FRAUD"] = 2.0
+        base = dict(n_finalizados=100, n_cancel_piloto=5)
+        a = evaluar(Metricas("A", "RENT", eventos=[Evento("conducta_inapropiada", HOY, subtipo="ABUSIVE_LANGUAGE")], **base), P, PESOS, REGLAS, HOY)
+        b = evaluar(Metricas("B", "RENT", eventos=[Evento("conducta_inapropiada", HOY, subtipo="PROSTITUTION_FRAUD")], **base), P, PESOS, REGLAS, HOY)
+        self.assertLess(b["score_final"], a["score_final"])

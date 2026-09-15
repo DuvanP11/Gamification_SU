@@ -11,6 +11,7 @@ B2B:
   invitacion_pibox:      8
   invitacion_rent:       2
   expulsion:             10
+  conducta_inapropiada:  8
   recaudo_24h:           8
   cancelacion_piloto:    15
   finalizados:           7
@@ -24,6 +25,7 @@ RENT:
   invitacion_rent:       10
   expulsion:             12
   baneo_imei:            10
+  conducta_inapropiada:  8
   cancelacion_piloto:    25
   finalizados:           15
 B2C:
@@ -32,6 +34,7 @@ B2C:
   invitacion_pibox:      10
   invitacion_rent:       3
   expulsion:             12
+  conducta_inapropiada:  8
   cancelacion_piloto:    18
   finalizados:           10
   alto_valor:            12

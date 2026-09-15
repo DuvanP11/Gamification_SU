@@ -90,6 +90,12 @@ curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap
 curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/05_suspensiones.sql -o /Users/pibox/dev/piloto-score/data_real/eventos_suspensiones.csv
 ```
 
+```
+curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap.io:8443/?database=picapmongoprod" --user dperilla --data-binary @/Users/pibox/dev/piloto-score/sql/06_conducta.sql -o /Users/pibox/dev/piloto-score/data_real/eventos_conducta.csv
+```
+
+`eventos_conducta.csv`: casos de acoso/hostigamiento **confirmados** ("Con Novedad") del
+módulo Conducta Inapropiada, un evento por piloto y día → variable `conducta_inapropiada`.
 `documentos.csv` alimenta la capa de habilitación (no da puntos: restringe/alerta según
 `parametros.yaml → documentos`). `eventos_suspensiones.csv` trae el historial con fecha de
 `driver_suspensions`; el motor descarta el flag sin fecha de `02_eventos` cuando hay historial.
