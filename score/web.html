@@ -2,13 +2,16 @@
 <style>
 :root{--bg:#f6f6f8;--card:#fff;--text:#1a1a1f;--muted:#6b6b76;--border:#e3e3ea;--acc:#5b3df5;--ok:#16a34a;--bad:#dc2626;--warn:#b45309}
 body{margin:0;font:13px/1.45 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text)}
-header{padding:10px 20px;background:#6a21d3;color:#fff;display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-weight:700}
-header .marca{display:flex;align-items:center;gap:10px;margin-right:6px}header .marca img{height:40px;width:auto;display:block;border-radius:6px}
-header .marca .mas{font-size:22px;font-weight:800;line-height:1}header h1{font-size:17px;margin:0 0 0 4px;font-weight:800;letter-spacing:.01em;white-space:nowrap}
-header label{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12.5px}
-header select,header input{font:inherit;font-weight:600;padding:4px 8px;border-radius:6px;border:1px solid #ffffff66;background:#ffffff1f;color:#fff}
-header select option{color:#1a1a1f;font-weight:500}header input[type=date]{color-scheme:dark}
-header button.s{background:#fff;color:#6a21d3;border:0;font-weight:700}header #msg{font-weight:600}
+header{padding:12px 24px;background:#6a21d3;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;font-weight:700}
+header .marca{display:flex;align-items:center;gap:14px}header .marca img{height:34px;width:auto;display:block}
+header .marca .mas{font-size:20px;font-weight:800;line-height:1;opacity:.9}
+header .marca h1{font-size:18px;margin:0 0 0 10px;padding-left:22px;border-left:1px solid #ffffff55;font-weight:800;letter-spacing:.01em;white-space:nowrap;line-height:34px}
+header .ctrl{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+header label{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;white-space:nowrap}
+header select,header input[type=date]{font:inherit;font-weight:600;padding:5px 10px;border-radius:7px;border:1px solid #ffffff55;background:#ffffff22;color:#fff;min-width:96px}
+header select option{color:#1a1a1f;font-weight:500}header input[type=date]{color-scheme:dark}header input[type=checkbox]{width:15px;height:15px;accent-color:#fff}
+header #msg{font-weight:600;font-size:12px;min-height:1em}
+@media(max-width:1100px){header .marca h1{border-left:0;padding-left:0;margin-left:0;width:100%;line-height:1.2}}
 main{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;padding:16px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
@@ -52,12 +55,13 @@ small{color:var(--muted)}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 </style></head><body>
 <header><div class="marca"><img src="/static/picap.png" alt="Picap"><span class="mas">+</span><img src="/static/pibox.png" alt="Pibox"><h1>Gamification Picap + Pibox</h1></div>
- <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
- <label>Datos <select id="fuente"></select></label>
- <label>Fecha de corte <input id="hoy" type="date"></label>
- <label><input type="checkbox" id="soloDef" checked> sólo definitivos (≥ n_min servicios)</label>
- <button class="s" id="guardarParams">Guardar parametros.yaml</button>
- <span id="msg" style="font-size:12px"></span></header>
+ <div class="ctrl">
+  <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
+  <label>Datos <select id="fuente"></select></label>
+  <label>Fecha de corte <input id="hoy" type="date"></label>
+  <label><input type="checkbox" id="soloDef" checked> sólo definitivos <small style="color:#e6dcff;font-weight:500">(≥ n_min servicios)</small></label>
+  <span id="msg"></span>
+ </div></header>
 <main>
  <div>
   <div class="card"><h2>Pesos definitivos <small id="tipoPesos"></small></h2>
@@ -65,7 +69,7 @@ small{color:var(--muted)}
    <div class="w" style="margin-top:8px"><span>α antecedentes</span><div class="fijo"><i id="alphaBar"></i></div><b id="alphaV"></b><small class="pe"></small></div>
    <div id="avisos" class="aviso"></div><div id="insight"></div></div>
   <div class="card" style="margin-top:12px"><h2>Parámetros (YAML, se aplica al recalcular)</h2><textarea id="params"></textarea>
-   <div style="margin-top:6px"><button class="p" id="recalc">Recalcular</button> <small>los sliders recalculan solos</small></div></div>
+   <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="p" id="recalc">Recalcular</button><button class="s" id="guardarParams">Guardar parametros.yaml</button></div></div>
  </div>
  <div>
   <div class="card"><h2>Ranking <small id="rankInfo"></small></h2><div id="ranking"></div></div>
