@@ -18,13 +18,13 @@ WITH
            argMax(ifNull(rate_to_driver, ''), _sdc_batched_at) AS rt,
            min(created_at)                                AS creado
     FROM picapmongoprod.bookings
-    WHERE created_at >= now() - INTERVAL 180 DAY
+    WHERE created_at >= now() - INTERVAL 180 DAY AND created_at <= now()
       AND notEmpty(ifNull(toString(driver_id), ''))
     GROUP BY _id),
   pk AS (
     SELECT DISTINCT toString(booking_id) AS booking_id
     FROM picapmongoprod.packages
-    WHERE created_at >= now() - INTERVAL 187 DAY),
+    WHERE created_at >= now() - INTERVAL 187 DAY AND created_at <= now()),
   tip AS (
     SELECT u.drv AS drv, u.st AS st, u.rt AS rt, u.creado >= now() - INTERVAL 90 DAY AS en90,
            if(p.booking_id != '', if(notEmpty(ifNull(u.cia, '')), 'B2B', 'B2C'), 'RENT') AS tipo

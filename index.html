@@ -50,6 +50,26 @@ small{color:var(--muted)}
 .ef{font-size:12px;white-space:normal}.ef b{font-size:14px}.ef.neg b{color:var(--bad)}.ef.pos b{color:var(--ok)}.ef.cero{color:var(--muted)}
 .nota{font-size:11px;color:var(--muted);margin-top:8px}
 .alerta{background:#fff4e5;border:1px solid #f5c98a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:12px}
+/* buscador */
+.busq{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.busq select,.busq input{font:inherit;padding:6px 9px;border:1px solid var(--border);border-radius:7px;background:#fff}
+.busq input{min-width:240px}.res{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.res .nom b{font-size:14px}.res .nom small{display:block}.res .scores{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.sc-pill{display:inline-flex;align-items:center;gap:6px;background:#f3f0ff;border-radius:8px;padding:4px 9px;font-size:12px}.sc-pill b{font-size:15px}
+.res .acc{display:flex;gap:6px;flex-direction:column}.res .acc button{white-space:nowrap}
+/* ventana emergente (hoja de vida) */
+.ov{position:fixed;inset:0;background:#1a1a1fb3;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;z-index:50;overflow:auto}
+.hv{background:#fff;border-radius:12px;width:min(1080px,100%);box-shadow:0 20px 60px #0005}
+.hv .cab{background:#6a21d3;color:#fff;padding:14px 18px;border-radius:12px 12px 0 0;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.hv .cab h3{margin:0;font-size:16px}.hv .cab small{color:#e6dcff}.hv .cab button{background:#fff;color:#6a21d3;border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer}
+.hv .cu{padding:14px 18px}.hv-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.hv-p{background:#f6f6f8;border:1px solid var(--border);border-radius:9px;padding:10px 12px}.hv-p h4{margin:0 0 6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hv-c{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:2px 0}.hv-c span:first-child{color:var(--muted)}.hv-c span:last-child{text-align:right;font-weight:600;word-break:break-all}
+.flag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin:2px 4px 2px 0}.flag.si{background:#fee2e2;color:#991b1b}.flag.no{background:#dcfce7;color:#166534}.flag.nd{background:#eee;color:#666}
+.hv table{font-size:11.5px}.hv th,.hv td{padding:3px 6px}.hv .foto{width:96px;height:96px;border-radius:10px;object-fit:cover;background:#eee;display:block}
+/* clave */
+.login{position:fixed;inset:0;background:#6a21d3;display:flex;align-items:center;justify-content:center;z-index:60}
+.login form{background:#fff;border-radius:12px;padding:24px 28px;min-width:300px;display:flex;flex-direction:column;gap:10px}
+.login input{font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:7px}
 @media(max-width:900px){.fila{grid-template-columns:1fr}}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 </style></head><body>
@@ -57,6 +77,7 @@ small{color:var(--muted)}
  <div class="ctrl">
   <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
   <label>Datos <select id="fuente"></select></label>
+  <label title="Elegir un mes pone la fecha de corte en su último día (o en hoy si es el mes en curso): el ranking sale con las ventanas de cada variable ancladas ahí">Mes <input id="mes" type="month"></label>
   <label>Fecha de corte <input id="hoy" type="date"></label>
   <label><input type="checkbox" id="soloDef" checked> sólo definitivos <small style="color:#e6dcff;font-weight:500">(≥ n_min servicios)</small></label>
   <span id="msg"></span>
@@ -71,12 +92,30 @@ small{color:var(--muted)}
    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="p" id="recalc">Recalcular</button><button class="s" id="guardarParams">Guardar parametros.yaml</button></div></div>
  </div>
  <div>
-  <div class="card"><h2>Ranking <small id="rankInfo"></small></h2><div id="ranking"></div></div>
+  <div class="card" id="buscador"><h2>Buscar piloto <small>· por ID, cédula, placa, celular o correo · en ClickHouse</small></h2>
+   <div class="busq"><select id="bTipo"></select><input id="bValor" placeholder="valor a buscar"><button class="p" id="bBtn">Buscar</button><small id="bMsg"></small></div>
+   <div id="bRes"></div></div>
+  <div class="card" style="margin-top:12px"><h2>Ranking <small id="rankInfo"></small></h2><div id="fuenteInfo" class="nota" style="margin:0 0 6px"></div><div id="ranking"></div></div>
   <div class="card" style="margin-top:12px" id="detalle"><h2>Desglose</h2><small>Clic en un piloto.</small></div>
  </div>
 </main>
 <script>
 var CFG=null, PESOS=null, RANK=null, NFILAS=0, SEL=null, VARS=[], DET={}, ALPHA=1;
+var CLAVE=''; try{CLAVE=localStorage.getItem('clave')||''}catch(e){}
+// Todas las llamadas pasan por acá: agrega la clave (X-Clave) y, si el servidor la
+// exige (401), muestra la pantalla de clave y reintenta cuando la escriban.
+async function api(url,body){
+  var o={headers:{'Content-Type':'application/json','X-Clave':CLAVE}}; if(body!==undefined){o.method='POST';o.body=JSON.stringify(body)}
+  var r=await fetch(url,o);
+  if(r.status===401){await pedirClave(); return api(url,body)}
+  return r.json();
+}
+function pedirClave(){return new Promise(function(res){
+  var d=document.createElement('div'); d.className='login';
+  d.innerHTML='<form><b style="font-size:15px">Gamification · clave de acceso</b><small>Esta página muestra datos personales de pilotos.</small><input type="password" placeholder="clave" autofocus><button class="p">Entrar</button></form>';
+  document.body.appendChild(d); var i=d.querySelector('input');
+  d.querySelector('form').onsubmit=function(e){e.preventDefault();CLAVE=i.value;try{localStorage.setItem('clave',CLAVE)}catch(_){} d.remove();res()};
+})}
 var EVENTOS=['suspension_piloto','suspension_pasajero','invitacion_pibox','invitacion_rent','expulsion','baneo_imei','conducta_inapropiada'];
 var BASE=['finalizados','antiguedad'];
 var MIXTAS=['sin_novedades','recaudo_24h','recaudo_entregado','alto_valor','cumplimiento_reservas','calificacion_pasajero'];
@@ -84,9 +123,12 @@ function bloqueDe(v){return BASE.indexOf(v)>=0?'base':MIXTAS.indexOf(v)>=0?'mixt
 function esPenal(v){return BASE.indexOf(v)<0}
 function $(id){return document.getElementById(id)}
 async function init(){
-  CFG=await (await fetch('/api/config')).json(); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
-  $('fuente').innerHTML=CFG.fuentes.map(function(f){return '<option value="'+f+'">'+(f==='data'?'ficticios (data)':f==='data_real'?'REALES (data_real)':f)+'</option>'}).join('');
-  var pref=CFG.fuentes.indexOf('data_real')>=0?'data_real':'data'; try{pref=localStorage.getItem('fuente')||pref}catch(e){} if(CFG.fuentes.indexOf(pref)>=0)$('fuente').value=pref;
+  CFG=await api('/api/config'); PESOS=CFG.pesos; $('params').value=CFG.parametros_yaml; $('hoy').value=CFG.hoy;
+  $('fuente').innerHTML=CFG.fuentes.map(function(f){return '<option value="'+f+'">'+(f==='data'?'ficticios (data)':f==='data_real'?'REALES (data_real)':f===CFG.fuente_ch?'ClickHouse (en vivo)':f)+'</option>'}).join('');
+  var pref=CFG.clickhouse?CFG.fuente_ch:(CFG.fuentes.indexOf('data_real')>=0?'data_real':'data'); try{pref=localStorage.getItem('fuente')||pref}catch(e){} if(CFG.fuentes.indexOf(pref)>=0)$('fuente').value=pref;
+  $('bTipo').innerHTML=Object.keys(CFG.tipos_busqueda).map(function(k){return '<option value="'+k+'">'+CFG.tipos_busqueda[k]+'</option>'}).join('');
+  if(!CFG.clickhouse){$('bMsg').innerHTML='<span class="err">sin conexión a ClickHouse (falta CH_PASSWORD): el buscador y la hoja de vida no están disponibles</span>';$('bBtn').disabled=true}
+  $('mes').value=CFG.hoy.slice(0,7);
   var a=CFG.parametros.general.alpha_antecedentes; if(a===undefined)a=1; ALPHA=a; $('alphaV').textContent=a; $('alphaBar').style.width=(a*100)+'%';
   renderPesos(); recalc();
 }
@@ -129,8 +171,10 @@ function paramsConAlpha(){ // α es fijo (parametros.yaml); se reafirma en el YA
 async function recalc(){
   var body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value,datos:$('fuente').value,solo_definitivos:$('soloDef').checked,n:10};
   $('msg').textContent='calculando…';
-  var d=await (await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if($('fuente').value===(CFG&&CFG.fuente_ch)) $('msg').textContent='consultando ClickHouse… la primera vez para una fecha de corte extrae todo (puede tardar un par de minutos)';
+  var d=await api('/api/score',body);
   if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent='';
+  $('fuenteInfo').innerHTML=d.fuente===(CFG&&CFG.fuente_ch)?'Datos de <b>ClickHouse</b> con corte al <b>'+$('hoy').value+'</b>'+(d.extraido_en?' · extraídos el '+d.extraido_en.replace('T',' ').slice(0,16):'')+' <button class="s" style="padding:2px 8px;font-size:11px" onclick="reextraer()">↻ volver a extraer</button>'+(d.log_extraccion&&d.log_extraccion.length?'<br><small>'+d.log_extraccion.join(' · ')+'</small>':''):'';
   RANK=d.ranking; PARAMS=d.parametros; NFILAS=d.n_filas; var av=d.avisos[tipoSel()]||[]; $('avisos').textContent=av.length?'⚠ '+av.join(' · '):'';
   renderTabla(); if(SEL) renderDetalle(SEL);
 }
@@ -239,7 +283,7 @@ function filaHTML(v,s,c,r){
 }
 async function renderDetalle(k){
   var partes=k.split('|'), body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value,datos:$('fuente').value,piloto_id:partes[0],tipo:partes[1]};
-  var d=await (await fetch('/api/detalle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  var d=await api('/api/detalle',body);
   if(!d.ok){$('detalle').innerHTML='<h2>Desglose</h2><div class="alerta">'+d.error+'</div>';return}
   var r=d.detalle; PARAMS=d.parametros; var b=r.contribuciones._bloques;
   var h='<h2>Desglose · '+r.piloto_id+' '+r.nombre+' · '+r.tipo+'</h2>';
@@ -279,6 +323,60 @@ async function renderDetalle(k){
   $('detalle').innerHTML=h;
 }
 $('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('soloDef').onchange=recalc; $('fuente').onchange=function(){try{localStorage.setItem('fuente',$('fuente').value)}catch(e){} SEL=null; $('detalle').innerHTML='<h2>Desglose</h2><small>Clic en un piloto.</small>'; recalc()}; $('recalc').onclick=recalc;
-$('guardarParams').onclick=async function(){var d=await (await fetch('/api/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parametros_yaml:paramsConAlpha()})})).json();$('msg').textContent=d.ok?'✓ parametros.yaml guardado':d.error;if(d.ok)$('params').value=paramsConAlpha()};
+$('guardarParams').onclick=async function(){var d=await api('/api/guardar',{parametros_yaml:paramsConAlpha()});$('msg').textContent=d.ok?'✓ parametros.yaml guardado':d.error;if(d.ok)$('params').value=paramsConAlpha()};
+// Mes → fecha de corte = último día del mes, o hoy si es el mes en curso.
+$('mes').onchange=function(){var v=$('mes').value; if(!v) return; var y=+v.slice(0,4), m=+v.slice(5,7);
+  var fin=new Date(Date.UTC(y,m,0)).toISOString().slice(0,10), hoyISO=CFG.hoy; $('hoy').value=fin>hoyISO?hoyISO:fin; recalc()};
+$('hoy').addEventListener('change',function(){$('mes').value=$('hoy').value.slice(0,7)});
+async function reextraer(){$('msg').textContent='extrayendo de ClickHouse…'; var d=await api('/api/extraer',{hoy:$('hoy').value});
+  if(!d.ok){$('msg').innerHTML='<span class="err">'+d.error+'</span>';return} $('msg').textContent=''; recalc()}
+
+// ── Buscador ──
+$('bBtn').onclick=buscar; $('bValor').onkeydown=function(e){if(e.key==='Enter')buscar()};
+async function buscar(){
+  var v=$('bValor').value.trim(); if(!v) return; $('bMsg').textContent='buscando…'; $('bRes').innerHTML='';
+  var d=await api('/api/buscar',{tipo:$('bTipo').value,valor:v,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value,datos:$('fuente').value});
+  if(!d.ok){$('bMsg').innerHTML='<span class="err">'+d.error+'</span>';return}
+  $('bMsg').textContent=d.resultados.length?d.resultados.length+' resultado'+(d.resultados.length>1?'s':''):'sin resultados';
+  $('bRes').innerHTML=d.resultados.map(function(f){
+    var sc=f.scores.length?f.scores.map(function(s){return '<span class="sc-pill" title="'+(s.observaciones||[]).join(' · ').replace(/"/g,'&quot;')+'">'+s.tipo+' <b>'+fmt(s.score_final)+'</b> <span class="pill b-'+s.banda+'">'+(s.banda||'SIN SCORE')+'</span> <small>'+s.vigencia.toLowerCase()+' · n='+s.n_aplicables+(s.estado!=='OK'?' · <span class="est-'+s.estado+'">'+s.estado+'</span>':'')+'</small></span>'}).join(''):
+      '<small>sin score en la fuente/corte elegidos (no tiene servicios en la ventana'+(f.tipo_cuenta!=='Piloto'?'; es cuenta de '+f.tipo_cuenta:'')+')</small>';
+    var est=f.estado, chips=['expulsado','suspendido','piloto_suspendido','desactivado'].filter(function(k){return est[k]===true}).map(function(k){return '<span class="flag si">'+k.replace('_',' ')+'</span>'}).join('');
+    return '<div class="res"><div class="nom"><b>'+esc(f.nombre||'(sin nombre)')+'</b> <span class="pill" style="background:#6a21d3">'+f.tipo_cuenta+'</span> '+chips+
+      '<small>'+idCell(f.id_user,'id')+' · doc. '+esc(f.documento||'—')+' · '+esc(f.celular||'—')+' · '+esc(f.correo||'—')+'</small><div class="scores">'+sc+'</div></div>'+
+      '<div class="acc"><button class="p" onclick="verHoja(\''+f.id_user+'\')">Hoja de vida</button>'+
+      f.scores.map(function(s){return '<button class="s" onclick="resumenScore(\''+s.piloto_id+'|'+s.tipo+'\')">Resumen Score'+(f.scores.length>1?' '+s.tipo:'')+'</button>'}).join('')+'</div></div>'}).join('');
+}
+function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function resumenScore(k){SEL=k; renderDetalle(k).then(function(){$('detalle').scrollIntoView({behavior:'smooth',block:'start'})});
+  Array.prototype.forEach.call(document.querySelectorAll('tr[data-k]'),function(tr){tr.classList.toggle('sel',tr.dataset.k===k)})}
+
+// ── Hoja de vida (ventana emergente, misma ficha que Consulta de Datos del portal) ──
+async function verHoja(id,desde,hasta){
+  var ov=$('hvOv'); if(!ov){ov=document.createElement('div');ov.id='hvOv';ov.className='ov';ov.onclick=function(e){if(e.target===ov)ov.remove()};document.body.appendChild(ov)}
+  ov.innerHTML='<div class="hv"><div class="cab"><h3>Hoja de vida</h3><button onclick="$(\'hvOv\').remove()">Cerrar</button></div><div class="cu">Consultando ClickHouse…</div></div>';
+  var d=await api('/api/hoja',{id_user:id,desde:desde||'',hasta:hasta||''});
+  if(!d.ok){ov.querySelector('.cu').innerHTML='<div class="alerta">'+esc(d.error)+'</div>';return}
+  var h=d.hoja, e=h.estado, v=h.vinculacion, b=h.bloqueos, c=h.ultima_conexion;
+  function campo(l,x){return '<div class="hv-c"><span>'+l+'</span><span>'+(x==null||x===''?'—':x)+'</span></div>'}
+  function flag(l,x){return '<span class="flag '+(x===true?'si':x===false?'no':'nd')+'">'+l+': '+(x===true?'SÍ':x===false?'no':'s/d')+'</span>'}
+  function tabla(rol,m){var T={mensajeria_b2b:'Mensajería B2B',mensajeria_b2c:'Mensajería B2C',rent:'Rent',total:'Total'},E=['finalizado','cancelado_piloto','cancelado_usuario','cancelado_plataforma','expirado','otro','total'];
+    return '<b>Como '+rol+'</b><table><thead><tr><th></th>'+E.map(function(x){return '<th class="num">'+x.replace('cancelado_','canc. ').replace('_',' ')+'</th>'}).join('')+'</tr></thead><tbody>'+
+      Object.keys(T).map(function(t){return '<tr'+(t==='total'?' style="font-weight:700"':'')+'><td>'+T[t]+'</td>'+E.map(function(x){return '<td class="num">'+(m[t][x]||0)+'</td>'}).join('')+'</tr>'}).join('')+'</tbody></table>'}
+  var rg=h.rango_servicios, rgTxt=rg.por_defecto_365d?'últimos 365 días':(rg.desde||'…')+' → '+(rg.hasta||'…');
+  ov.querySelector('.hv').innerHTML='<div class="cab"><div><h3>'+esc(h.nombre||'(sin nombre)')+' <small>· '+h.tipo_cuenta+' · '+h.id_user+'</small></h3></div><button onclick="$(\'hvOv\').remove()">Cerrar</button></div><div class="cu">'+
+   '<div class="hv-g">'+
+   '<div class="hv-p" style="display:flex;gap:12px;align-items:flex-start">'+(h.foto_url?'<img class="foto" src="'+esc(h.foto_url)+'" alt="foto">':'<div class="foto"></div>')+'<div style="flex:1"><h4>Identidad</h4>'+campo('Documento',esc(h.documento))+campo('Nacimiento',esc(h.nacimiento))+campo('Cuenta creada',esc(h.creacion_cuenta))+campo('Calificación en la app',esc(h.rating_app))+'</div></div>'+
+   '<div class="hv-p"><h4>Contacto</h4>'+campo('Celular',esc(h.celular))+campo('Correo',esc(h.correo))+campo('IMEI (sesión)',esc(h.imei))+campo('IP aprox.',h.ip.lat?esc(h.ip.lat+', '+h.ip.lon):'')+'</div>'+
+   '<div class="hv-p"><h4>Estado de la cuenta</h4>'+flag('Expulsado',e.expulsado)+flag('Suspendido',e.suspendido)+flag('Piloto suspendido',e.piloto_suspendido)+flag('Desactivado',e.desactivado)+flag('Sesión bloqueada',e.sesion_bloqueada)+
+     '<div style="margin-top:6px">'+flag('Asociado',v.asociado)+flag('Dedicado',v.dedicado)+'</div>'+(Object.keys(h.comentarios_bloqueo||{}).length?'<div class="nota">'+Object.keys(h.comentarios_bloqueo).map(function(k){return '<b>'+k.replace('comentario_','')+':</b> '+esc(h.comentarios_bloqueo[k])}).join('<br>')+'</div>':'')+'</div>'+
+   '<div class="hv-p"><h4>Bloqueos (histórico completo)</h4>'+campo('Suspensiones',b.suspensiones)+campo('Expulsiones',b.expulsiones)+campo('Último',esc(b.ultimo))+(b.ultimo?campo('Motivo',esc((b.ultimo_mensaje||'').slice(0,160)))+campo('Vigente',b.ultimo_vigente?'<span class="flag si">SÍ</span>':'no')+campo('Desde / hasta',esc((b.ultimo_desde||'—')+' / '+(b.ultimo_hasta||'sin fin')))+campo('Origen',esc(b.ultimo_origen)+(b.ultimo_tipos?' · '+esc(b.ultimo_tipos):'')):'')+'</div>'+
+   '<div class="hv-p"><h4>Última conexión</h4>'+campo('Fecha',esc(c.fecha))+campo('Ubicación',c.lat?'<a target="_blank" href="https://maps.google.com/?q='+esc(c.lat)+','+esc(c.lon)+'">'+esc(c.lat+', '+c.lon)+'</a>':'')+campo('App',esc(c.app_version))+campo('Equipo',esc((c.os||'')+' '+(c.modelo||'')))+'</div>'+
+   '<div class="hv-p"><h4>Placas</h4>'+(h.placas.length?h.placas.map(function(p){return '<span class="flag '+(p.estado==='3'?'no':'nd')+'">'+esc(p.placa)+(p.estado==='3'?' · activa':' · estado '+esc(p.estado))+'</span>'}).join(''):'<small>sin vehículos enrolados</small>')+'</div>'+
+   '</div>'+
+   '<div class="sec"><h3>Servicios <small>· '+rgTxt+'</small></h3><div class="busq" style="margin:4px 0 8px"><label>desde <input type="date" id="hvDesde" value="'+(rg.desde?rg.desde.slice(0,10):'')+'"></label><label>hasta <input type="date" id="hvHasta" value="'+(rg.hasta?rg.hasta.slice(0,10):'')+'"></label><button class="s" onclick="verHoja(\''+h.id_user+'\',$(\'hvDesde\').value,$(\'hvHasta\').value)">Aplicar rango</button></div>'+
+   '<div class="hv-g">'+'<div class="hv-p">'+tabla('piloto',h.servicios.piloto)+'</div><div class="hv-p">'+tabla('usuario',h.servicios.usuario)+'</div></div></div>'+
+   '<div class="nota">Bloqueos, estado y ficha son el histórico completo; el rango sólo acota los servicios (igual que Consulta de Datos del portal).</div></div>';
+}
 init();
 </script></body></html>

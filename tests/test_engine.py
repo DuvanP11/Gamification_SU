@@ -420,3 +420,33 @@ class TiemposTest(unittest.TestCase):
         self.assertEqual(antes["contribuciones"]["conducta_inapropiada"]["aporte"], 0.0)     # antes de julio no cuenta
         self.assertLess(jul["contribuciones"]["conducta_inapropiada"]["aporte"], 0)
         self.assertEqual(jul["contribuciones"]["conducta_inapropiada"]["aporte"], hoy["contribuciones"]["conducta_inapropiada"]["aporte"])  # sin decaimiento
+
+
+class ClickHouseTest(unittest.TestCase):
+    """Sin red: sólo lo que se puede probar en seco (anclaje de fechas y condiciones)."""
+    def test_anclar_mueve_now_y_today_al_corte(self):
+        from score import ch
+        sql = "WHERE created_at >= now() - INTERVAL 90 DAY AND created_at <= now() AND d = today()"
+        a = ch.anclar(sql, date(2026, 7, 31))
+        self.assertNotIn("now()", a); self.assertNotIn("today()", a)
+        self.assertIn("toDateTime('2026-07-31 23:59:59', 'America/Bogota') - INTERVAL 90 DAY", a)
+        self.assertIn("toDate('2026-07-31')", a)
+        # los seis SQL de extracción se anclan sin dejar rastro de now()/today()
+        for archivo, _ in ch.EXTRACCION:
+            t = ch.anclar((RAIZ / "sql" / archivo).read_text(encoding="utf-8"), date(2026, 6, 30))
+            self.assertNotRegex(t, r"\bnow\(\)|\btoday\(\)", archivo)
+
+    def test_condiciones_de_busqueda(self):
+        from score import ch
+        self.assertEqual(ch.condicion("id_usuario", "abc"), "toString(p._id) = 'abc'")
+        self.assertIn("cod_identification)) = '1010'", ch.condicion("documento", " 1010 "))
+        self.assertIn("= 'a@b.co'", ch.condicion("correo", "A@B.co"))
+        self.assertIn("'[^0-9]', '') = '573001234567'", ch.condicion("celular", "+57 300 123-4567"))   # todos los dígitos, como el portal
+        with self.assertRaises(ValueError): ch.condicion("celular", "abc")
+        with self.assertRaises(ValueError): ch.condicion("otro", "x")
+        self.assertIn("\\'", ch.condicion("documento", "1'; DROP"))   # comillas escapadas
+
+    def test_sin_credenciales_no_toca_la_red(self):
+        from score import ch
+        self.assertFalse(ch.configurado())
+        with self.assertRaises(ch.ErrorCH): ch.consultar("SELECT 1")

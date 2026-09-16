@@ -7,7 +7,7 @@ WITH
   pil AS (
     SELECT DISTINCT toString(driver_id) AS piloto_id
     FROM picapmongoprod.bookings
-    WHERE created_at >= now() - INTERVAL 90 DAY AND notEmpty(ifNull(toString(driver_id), ''))),
+    WHERE created_at >= now() - INTERVAL 90 DAY AND created_at <= now() AND notEmpty(ifNull(toString(driver_id), ''))),
   pas AS (
     SELECT _id,
            argMax(lower(ifNull(toString(is_driver_suspended), '')), _sdc_batched_at) AS ds,

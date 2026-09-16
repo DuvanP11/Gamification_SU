@@ -20,7 +20,7 @@ WITH
            argMax(toFloat64OrZero(JSONExtractString(amount, 'cents')), _sdc_batched_at) AS cents,
            argMax(created_at, _sdc_batched_at) AS ts
     FROM picapmongoprod.wallet_account_transactions
-    WHERE _type = 'WalletAccountCounterDeliveryTransaction' AND created_at >= now() - INTERVAL 90 DAY
+    WHERE _type = 'WalletAccountCounterDeliveryTransaction' AND created_at >= now() - INTERVAL 90 DAY AND created_at <= now()
     GROUP BY _id),
   rec AS (
     SELECT bkg, any(acct) AS acct, min(ts) AS fecha_recaudo, -sum(cents) / 100 AS monto
@@ -41,7 +41,7 @@ WITH
              argMax(toFloat64OrNull(JSONExtractString(amount_after_transaction, 'cents')), _sdc_batched_at) AS aat,
              argMax(length(amount_after_transaction), _sdc_batched_at) AS len_aat
       FROM picapmongoprod.wallet_account_transactions
-      WHERE account_id IN (SELECT acct FROM rec) AND created_at >= now() - INTERVAL 90 DAY
+      WHERE account_id IN (SELECT acct FROM rec) AND created_at >= now() - INTERVAL 90 DAY AND created_at <= now()
       GROUP BY _id)
     WHERE len_aat > 2 AND aat >= -1),
   sal AS (
@@ -52,7 +52,7 @@ WITH
   bk AS (
     SELECT _id, argMax(toString(driver_id), _sdc_batched_at) AS drv
     FROM picapmongoprod.bookings
-    WHERE created_at >= now() - INTERVAL 97 DAY AND _id IN (SELECT bkg FROM rec)
+    WHERE created_at >= now() - INTERVAL 97 DAY AND created_at <= now() AND _id IN (SELECT bkg FROM rec)
     GROUP BY _id)
 SELECT bk.drv AS piloto_id,
        r.bkg  AS booking_id,

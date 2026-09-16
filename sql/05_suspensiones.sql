@@ -24,11 +24,11 @@ FROM (
          argMax(status_cd,     _sdc_batched_at) AS status_cd,
          argMax(message,       _sdc_batched_at) AS message
   FROM picapmongoprod.driver_suspensions
-  WHERE created_at >= now() - INTERVAL 730 DAY
+  WHERE created_at >= now() - INTERVAL 730 DAY AND created_at <= now()
   GROUP BY _id)
 WHERE notEmpty(ifNull(toString(driver_id), ''))
   AND toString(driver_id) IN (
     SELECT DISTINCT toString(driver_id) FROM picapmongoprod.bookings
-    WHERE created_at >= now() - INTERVAL 90 DAY AND notEmpty(ifNull(toString(driver_id), '')))
+    WHERE created_at >= now() - INTERVAL 90 DAY AND created_at <= now() AND notEmpty(ifNull(toString(driver_id), '')))
 ORDER BY piloto_id, fecha
 FORMAT CSVWithNames

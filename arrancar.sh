@@ -1,6 +1,7 @@
 #!/bin/zsh
 # Arranca el afinador del Score de Pilotos en http://127.0.0.1:8765
-#   ./arrancar.sh            → arranca (o reinicia) y abre el navegador
+#   ./arrancar.sh            → arranca (o reinicia) y abre el navegador; pide la clave de ClickHouse
+#   ./arrancar.sh csv        → arranca sin ClickHouse (sólo CSV locales)
 #   ./arrancar.sh parar      → lo apaga
 #   ./arrancar.sh test       → corre las pruebas
 set -e
@@ -13,6 +14,12 @@ case "${1:-}" in
     python3 -m unittest discover -s tests
     exit 0 ;;
 esac
+# ClickHouse en vivo: si CH_PASSWORD no viene del entorno se pide acá (Enter = seguir
+# sólo con los CSV locales). La clave queda sólo en el proceso del afinador.
+if [ -z "${CH_PASSWORD:-}" ] && [ "${1:-}" != "csv" ]; then
+  printf 'Clave de ClickHouse (dperilla) — Enter para modo CSV: '; read -s CH_PASSWORD; echo
+  export CH_PASSWORD
+fi
 pkill -f "score.web" 2>/dev/null || true
 nohup python3 -m score.web > /tmp/piloto-score-web.log 2>&1 &
 sleep 1.5

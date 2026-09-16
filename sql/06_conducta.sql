@@ -16,7 +16,7 @@ SELECT subject_id                                   AS piloto_id,
        any(revisado_por)                            AS revisado_por,
        toString(max(revisado_en))                   AS revisado_en
 FROM picapmongoprod.dashboard_conducta_listas FINAL
-WHERE sujeto_rol = 'Piloto' AND novedad = 'con_novedad'
+WHERE sujeto_rol = 'Piloto' AND novedad = 'con_novedad' AND run_date <= today()
 GROUP BY subject_id, run_date
 ORDER BY piloto_id, fecha
 FORMAT CSVWithNames

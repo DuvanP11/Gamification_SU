@@ -18,7 +18,8 @@ config/reglas.yaml       reglas existentes → bloqueo / tope / alerta (nunca pu
 score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
 score/cli.py             python3 -m score …
-score/web.py             servidor del afinador "Gamification Picap + Pibox" (ranking, desglose, editor de parámetros; pesos fijos)
+score/web.py             servidor del afinador "Gamification Picap + Pibox" (ranking, desglose, buscador, hoja de vida; pesos fijos)
+score/ch.py              ClickHouse en vivo: extracción anclada a la fecha de corte, búsqueda por id/cédula/placa/celular/correo, hoja de vida
 index.html + static/     la página y la portada (tinta blanca, fondo transparente); en Vercel se sirven como estáticos
 api/index.py             entrada para Vercel: expone el mismo handler como función serverless (ver "Publicar en Vercel")
 data/*.csv               12 casos con nombre + 120 pilotos ficticios (data/generar_datos_ficticios.py)
@@ -70,6 +71,27 @@ pasan como argumentos. Escribir el comando solo.
 
 Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependencias.
 
+## ClickHouse en vivo (buscador, hoja de vida y ranking por fecha)
+
+Con la clave de `dperilla` en `CH_PASSWORD` (`./arrancar.sh` la pide al arrancar; Enter =
+modo CSV) el afinador:
+
+- Ofrece la fuente **ClickHouse (en vivo)**. Al pedir un ranking con una **fecha de corte**
+  (o un **mes**: se toma su último día), corre `sql/01..06` con `now()`/`today()`
+  reemplazados por esa fecha y deja los CSV en `data_ch/<fecha>/` (caché; "↻ volver a
+  extraer" los baja de nuevo). Es exactamente la misma metodología: cambia el ancla de las
+  ventanas, no las fórmulas. La primera extracción de una fecha tarda un par de minutos.
+- **Buscar piloto** por ID, cédula, placa, celular o correo (mismas condiciones que
+  Consulta de Datos del portal): muestra quién es, su score por tipo en la fuente/corte
+  elegidos, y dos botones — **Hoja de vida** (ventana emergente con la ficha completa:
+  identidad, contacto, estado, bloqueos históricos, última conexión, placas y servicios
+  por rol/tipo/estado con rango de fechas) y **Resumen Score** (el desglose).
+- `APP_PASSWORD`: si está definida, la página pide una clave y todo `/api/*` la exige.
+  **Obligatoria cuando está publicada**: la hoja de vida trae datos personales.
+
+Variables: `CH_URL` (por defecto `https://clickhouse.picap.io:8443/?database=picapmongoprod`),
+`CH_USER` (`dperilla`), `CH_PASSWORD`, `APP_PASSWORD`, opcional `CONSULTA_DATOS_COL_PLACA`.
+
 ## Publicar en Vercel (web en producción)
 
 El repo es `github.com/DuvanP11/Gamification_SU`. Vercel lo despliega solo con importarlo
@@ -86,6 +108,12 @@ publica una versión nueva.
   contraseña) y una forma de subir los CSV sin pasar por git (p. ej. Vercel Blob privado).
 - `/api/guardar` responde error en producción (el disco es de sólo lectura): los
   parámetros se cambian en `config/parametros.yaml` con commit y se despliegan.
+- **ClickHouse desde Vercel:** definir en el proyecto (Settings → Environment Variables)
+  `CH_PASSWORD`, `APP_PASSWORD` (y `CH_USER`/`CH_URL` si cambian). El buscador y la hoja
+  de vida son consultas chicas y funcionan; el ranking en vivo extrae ~25 MB y puede
+  pasarse del límite de la función (60 s) — en ese caso el ranking se ve con los CSV
+  y la búsqueda/hoja de vida siguen en vivo. La caché de extracción vive en `/tmp` y se
+  pierde con cada instancia nueva.
 
 ## Cómo se agregan cosas
 
