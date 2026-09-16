@@ -6,7 +6,8 @@
 # Bloques: BASE (finalizados, antiguedad) sólo suma; MIXTAS (cancelación, sin
 # novedades, recaudo, alto valor, reservas) suman o restan según la referencia;
 # NEGATIVAS (antecedentes, activación express) sólo restan. 2026-09-16: + las
-# mixtas calificacion_pasajero (los tres tipos) y recaudo_entregado (B2B/B2C). Los pesos son
+# mixtas calificacion_pasajero (Rent/B2C: en B2B la nota es siempre 5 y no aplica) y
+# recaudo_entregado (B2B/B2C). Los pesos son
 # relativos DENTRO de su bloque (base / comportamiento = mixtas + negativas).
 # Regla: ninguna variable > max_participacion_peso de su bloque (parametros.yaml).
 # ============================================================================
@@ -26,7 +27,6 @@ B2B:
   alto_valor:            10
   cumplimiento_reservas: 8
   recaudo_entregado:     10
-  calificacion_pasajero: 6
 RENT:
   suspension_piloto:     18
   suspension_pasajero:   7

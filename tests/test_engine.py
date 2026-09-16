@@ -210,10 +210,13 @@ class Casos(unittest.TestCase):
     def test_calificacion_pasajero(self):
         base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5)
         sub = lambda r: r["sub_scores"]["calificacion_pasajero"]
-        for t in TIPOS:
+        for t in ("RENT", "B2C"):
             self.assertEqual(sub(ev(Metricas("0", t, **base)))["motivo"], "sin_dato")
             self.assertEqual(sub(ev(Metricas("0", t, n_calificados=0, suma_calificaciones=0, **base)))["motivo"], "sin_dato")
-        ref = ev(Metricas("R", "RENT", n_calificados=100, suma_calificaciones=485, **base))    # = referencia 4.85
+        # B2B: la nota es ~siempre 5 en la población (calibración 2026-09-16) → no aplica
+        self.assertEqual(sub(ev(Metricas("0", "B2B", n_calificados=100, suma_calificaciones=500, **base)))["motivo"], "no_aplica")
+        p0 = PARAMS["tasas"]["calificacion_pasajero"]["p0"]["RENT"]
+        ref = ev(Metricas("R", "RENT", n_calificados=100, suma_calificaciones=p0 * 100, **base))  # = referencia
         mejor = ev(Metricas("M", "RENT", n_calificados=100, suma_calificaciones=500, **base))  # todo cincos
         peor = ev(Metricas("P", "RENT", n_calificados=100, suma_calificaciones=380, **base))   # promedio 3.8
         self.assertAlmostEqual(ref["contribuciones"]["calificacion_pasajero"]["aporte"], 0, delta=0.05)

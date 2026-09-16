@@ -150,14 +150,17 @@ tasas:
     # promedio_ajustado = (Σ notas + m·p0) / (n + m); sub = rampa(promedio_ajustado).
     # Mixta: por encima de p0 suma, por debajo resta.
     # Manejo de tiempos: últimos 180 días (columnas n_calificados / suma_calificaciones).
-    # CALIBRAR con sql/calibracion_calificacion.sql: p0 = mediana poblacional del
-    # promedio, x_score5 = p80, x_score0 = p10. Valores de arranque: promedio de los
-    # pilotos con ≥50 notas en 365 d = 4,85 (2026-09-16, incluía cancelados).
+    # CALIBRADO 2026-09-16 con sql/calibracion_calificacion.sql (180 d, pilotos con ≥20 notas):
+    #   promedio por piloto   p10 / p50 / p80   B2C 4.778/4.917/4.964 · RENT 4.606/4.825/4.911
+    #   B2B (242 pilotos): p10 = 4.981 y del p20 al p90 todo en 5.000 → la nota es prácticamente
+    #   constante (parece automática del cliente empresa) y NO discrimina: la variable no aplica
+    #   en B2B (ver aplicabilidad). Si algún día el cliente califica de verdad, volver a calibrar.
+    # p0 = mediana; x_score5 = p80 (mejor quinto → +1); x_score0 = p10 (peor décimo → −1).
     ventana_dias: 180
-    p0: 4.85
+    p0:       { RENT: 4.825, B2C: 4.917 }
     m: 10
-    x_score0: 4.00  # promedio ≤ 4,0 → lo peor (−1)
-    x_score5: 4.95  # promedio ≥ 4,95 → lo mejor (+1); p0 = 4,85 es el neutro
+    x_score0: { RENT: 4.606, B2C: 4.778 }
+    x_score5: { RENT: 4.911, B2C: 4.964 }
   cumplimiento_reservas:
     # Manejo de tiempos: últimos 3 meses (es la ventana con la que se extraen las reservas).
     ventana_dias: 90
@@ -245,7 +248,7 @@ aplicabilidad:
   conducta_inapropiada:  [B2B, RENT, B2C]
   recaudo_24h:           [B2B]
   recaudo_entregado:     [B2B, B2C]
-  calificacion_pasajero: [B2B, RENT, B2C]
+  calificacion_pasajero: [RENT, B2C]      # en B2B la nota es ~siempre 5,0: no discrimina
   cancelacion_piloto:    [B2B, RENT, B2C]
   finalizados:           [B2B, RENT, B2C]
   antiguedad:            [B2B, RENT, B2C]
