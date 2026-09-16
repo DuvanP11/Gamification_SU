@@ -1,57 +1,64 @@
 # ============================================================================
-# PESOS POR TIPO DE SERVICIO — PROPUESTA PRELIMINAR (no definitiva).
-# Independientes de la metodología: cambiar acá NO cambia cómo se mide nada.
-# Se renormalizan sobre las variables que apliquen y tengan dato, así que la
-# suma no tiene que ser 100; se usa 100 sólo para leerlos como porcentaje.
-# Bloques: BASE (finalizados, antiguedad) sólo suma; MIXTAS (cancelación, sin
-# novedades, recaudo, alto valor, reservas) suman o restan según la referencia;
-# NEGATIVAS (antecedentes, activación express) sólo restan. 2026-09-16: + las
-# mixtas calificacion_pasajero (Rent/B2C: en B2B la nota es siempre 5 y no aplica) y
-# recaudo_entregado (B2B/B2C). Los pesos son
-# relativos DENTRO de su bloque (base / comportamiento = mixtas + negativas).
+# PESOS POR TIPO DE SERVICIO — DEFINITIVOS (fijados por el usuario en el afinador,
+# 2026-09-16). Independientes de la metodología: cambiar acá NO cambia cómo se mide
+# nada. Se renormalizan sobre las variables que apliquen y tengan dato, así que la
+# suma no tiene que ser 100: lo que manda es la proporción dentro de cada bloque.
+# Bloques: BASE (finalizados, antiguedad) sólo suma hasta 3,5; MIXTAS (sin novedades,
+# recaudo 24 h, recaudo entregado, alto valor, reservas, calificación de pasajeros)
+# suman hasta +1,5 si están mejor que la referencia y restan si peor; NEGATIVAS
+# (antecedentes, cancelación propia, activación express) sólo restan. Lo que resta
+# (mixtas malas + negativas) llega hasta −3,5 con α = 1.
 # Regla: ninguna variable > max_participacion_peso de su bloque (parametros.yaml).
+# Lectura por tipo (proporción dentro del bloque):
+#   B2B  base: experiencia 67 % · antigüedad 33 %   ·  mixtas: alto valor 40 %, recaudo
+#        entregado 21 %, reservas 21 %, recaudo 24 h 10 %, sin novedades 8 %  ·  negativas:
+#        activación express 19 %, expulsiones 12 %, invitaciones Pibox 10 %, cancelaciones 10 %
+#   B2C  base 56/44 · mixtas: alto valor 42 %, recaudo entregado 23 %, sin novedades 23 %,
+#        calificación 12 % · negativas: expulsiones 19 %, cancelaciones 12 %, conducta 11 %
+#   RENT base 60/40 · única mixta: calificación de pasajeros · negativas: activación
+#        express 22 %, expulsiones 16 %, invitaciones Rent 13 %, conducta 11 %
 # ============================================================================
 B2B:
-  suspension_piloto:     15
-  suspension_pasajero:   5
-  invitacion_pibox:      8
-  invitacion_rent:       2
-  expulsion:             10
-  conducta_inapropiada:  8
-  recaudo_24h:           8
-  cancelacion_piloto:    15
-  finalizados:           14
-  antiguedad:            12
-  sin_novedades:         14
-  activacion_express:    6
-  alto_valor:            10
-  cumplimiento_reservas: 8
+  finalizados:           10
+  antiguedad:            5
+  recaudo_24h:           5
   recaudo_entregado:     10
-RENT:
-  suspension_piloto:     18
-  suspension_pasajero:   7
-  invitacion_pibox:      3
-  invitacion_rent:       10
-  expulsion:             12
-  baneo_imei:            10
+  alto_valor:            19
+  sin_novedades:         4
+  cumplimiento_reservas: 10
+  suspension_piloto:     5
+  suspension_pasajero:   5
+  invitacion_pibox:      16
+  invitacion_rent:       13
+  expulsion:             20
   conducta_inapropiada:  8
-  cancelacion_piloto:    25
+  cancelacion_piloto:    16
+  activacion_express:    30
+B2C:
+  finalizados:           15
+  antiguedad:            12
+  recaudo_entregado:     10
+  calificacion_pasajero: 5
+  alto_valor:            18
+  sin_novedades:         10
+  suspension_piloto:     5
+  suspension_pasajero:   5
+  invitacion_pibox:      14
+  invitacion_rent:       12
+  expulsion:             28
+  conducta_inapropiada:  16
+  cancelacion_piloto:    18
+  activacion_express:    6
+RENT:
   finalizados:           15
   antiguedad:            10
-  activacion_express:    6
-  calificacion_pasajero: 12
-B2C:
-  suspension_piloto:     15
-  suspension_pasajero:   6
-  invitacion_pibox:      10
-  invitacion_rent:       3
-  expulsion:             12
-  conducta_inapropiada:  8
-  cancelacion_piloto:    18
-  finalizados:           14
-  antiguedad:            12
-  sin_novedades:         14
-  activacion_express:    6
-  alto_valor:            12
-  recaudo_entregado:     10
-  calificacion_pasajero: 8
+  calificacion_pasajero: 5
+  suspension_piloto:     5
+  suspension_pasajero:   5
+  invitacion_pibox:      11
+  invitacion_rent:       16
+  expulsion:             20
+  baneo_imei:            9
+  conducta_inapropiada:  14
+  cancelacion_piloto:    13
+  activacion_express:    27

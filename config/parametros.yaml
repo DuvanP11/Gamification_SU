@@ -12,8 +12,9 @@ general:
   n_min_definitivo: { B2B: 20, RENT: 20, B2C: 20 }
   # Ninguna variable puede concentrar más de esta fracción del peso de SU bloque
   # (se valida al cargar pesos.yaml, evita resultados desproporcionados). El bloque
-  # positivo tiene pocas variables (2–3), por eso su límite es más alto.
-  max_participacion_peso: { base: 0.60, comportamiento: 0.35 }
+  # positivo tiene pocas variables (2–3), por eso su límite es más alto (0.70 desde el
+  # 2026-09-16: los pesos definitivos de B2B ponen experiencia en 10 de 15 = 67 %).
+  max_participacion_peso: { base: 0.70, comportamiento: 0.35 }
   # Techo de la BASE ganada (experiencia + antigüedad). Un veterano activo con
   # comportamiento igual a la referencia queda en base_confianza_max; lo que hace
   # mejor que la referencia lo sube hasta 5 y lo que hace peor (o antecedentes) lo

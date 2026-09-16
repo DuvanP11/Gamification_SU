@@ -13,7 +13,7 @@ La metodología completa (fórmulas, tratamiento de casos, ejemplos, riesgos) es
 
 ```
 config/parametros.yaml   cómo se mide cada variable (semividas, topes, p0, m, rampas, n_min, bandas, α)
-config/pesos.yaml        pesos por tipo — PROPUESTA PRELIMINAR, independientes de la metodología
+config/pesos.yaml        pesos por tipo — DEFINITIVOS (2026-09-16), independientes de la metodología
 config/reglas.yaml       reglas existentes → bloqueo / tope / alerta (nunca puntos)
 score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
