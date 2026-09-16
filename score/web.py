@@ -67,8 +67,9 @@ class H(BaseHTTPRequestHandler):
             b = HTML.encode(); self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
             self.end_headers(); self.wfile.write(b); return
-        if self.path.startswith("/static/") and self.path.endswith(".png") and "/" not in self.path[8:]:
-            f = Path(__file__).parent / "static" / self.path[8:]
+        ruta = self.path.split("?", 1)[0]
+        if ruta.startswith("/static/") and ruta.endswith(".png") and "/" not in ruta[8:]:
+            f = Path(__file__).parent / "static" / ruta[8:]
             if f.exists():
                 b = f.read_bytes(); self.send_response(200)
                 self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(b)))

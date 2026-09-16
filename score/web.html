@@ -5,13 +5,13 @@ body{margin:0;font:13px/1.45 -apple-system,system-ui,sans-serif;background:var(-
 header{padding:12px 24px;background:#6a21d3;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;font-weight:700}
 header .marca{display:flex;align-items:center;gap:14px}header .marca img{height:34px;width:auto;display:block}
 header .marca .mas{font-size:20px;font-weight:800;line-height:1;opacity:.9}
-header .marca h1{font-size:18px;margin:0 0 0 10px;padding-left:22px;border-left:1px solid #ffffff55;font-weight:800;letter-spacing:.01em;white-space:nowrap;line-height:34px}
+header .marca h1{font-size:22px;margin:0 6px 0 0;font-weight:800;letter-spacing:.01em;white-space:nowrap;line-height:34px}
 header .ctrl{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
 header label{display:flex;align-items:center;gap:8px;font-weight:700;font-size:12.5px;white-space:nowrap}
 header select,header input[type=date]{font:inherit;font-weight:600;padding:5px 10px;border-radius:7px;border:1px solid #ffffff55;background:#ffffff22;color:#fff;min-width:96px}
 header select option{color:#1a1a1f;font-weight:500}header input[type=date]{color-scheme:dark}header input[type=checkbox]{width:15px;height:15px;accent-color:#fff}
 header #msg{font-weight:600;font-size:12px;min-height:1em}
-@media(max-width:1100px){header .marca h1{border-left:0;padding-left:0;margin-left:0;width:100%;line-height:1.2}}
+
 main{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;padding:16px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
@@ -54,7 +54,7 @@ small{color:var(--muted)}
 @media(max-width:900px){.fila{grid-template-columns:1fr}}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 </style></head><body>
-<header><div class="marca"><img src="/static/picap.png" alt="Picap"><span class="mas">+</span><img src="/static/pibox.png" alt="Pibox"><h1>Gamification Picap + Pibox</h1></div>
+<header><div class="marca"><h1>Gamification</h1><img src="/static/picap.png?v=3" alt="Picap"><span class="mas">+</span><img src="/static/pibox.png?v=3" alt="Pibox"></div>
  <div class="ctrl">
   <label>Tipo <select id="tipo"><option>B2B</option><option>RENT</option><option>B2C</option><option value="">Todos</option></select></label>
   <label>Datos <select id="fuente"></select></label>
