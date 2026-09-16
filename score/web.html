@@ -4,7 +4,7 @@
 body{margin:0;font:13px/1.45 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text)}
 header{padding:12px 20px;background:#2d1f7a;color:#fff;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 header h1{font-size:16px;margin:0}header select,header input,header button{font:inherit;padding:5px 8px;border-radius:6px;border:1px solid #fff5}
-main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px;max-width:1500px}
+main{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;padding:16px}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
 h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .w{display:grid;grid-template-columns:150px 1fr 38px;gap:8px;align-items:center;margin:3px 0;font-size:12px}
@@ -12,7 +12,11 @@ h2{font-size:13px;margin:0 0 8px;color:var(--muted);text-transform:uppercase;let
 .w{grid-template-columns:150px 1fr 30px 38px}.w.ev{color:#7a1f1f}.w.ev b{color:#7a1f1f}.w .pe{text-align:right;color:var(--muted);font-size:10px}
 .grp{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid var(--border)}.grp.ev{color:#7a1f1f}.grp b{text-transform:none;letter-spacing:0}
 #insight{font-size:12px;line-height:1.5;color:var(--text);background:#f3f0ff;border-radius:8px;padding:8px 10px;margin-top:10px}
-table{border-collapse:collapse;width:100%}th,td{padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;font-size:12px;white-space:nowrap}
+table{border-collapse:collapse;width:100%}th,td{padding:3px 6px;border-bottom:1px solid var(--border);text-align:left;font-size:11.5px;line-height:1.25;white-space:nowrap;vertical-align:middle}
+.rk{overflow-x:auto}.rk th{position:sticky;top:0;background:var(--card);z-index:1;font-size:11px;line-height:1.2;padding-bottom:5px}
+.rk td.sc{text-align:right;font-variant-numeric:tabular-nums}.rk td.sc b{font-size:13px}.rk td.sc.nuevo b{font-size:14px}.rk td.sc > small{display:block;font-size:10px;line-height:1.1}
+.rk td.sub > small{display:block;font-size:10px;line-height:1.15}.rk td.obs{white-space:normal;min-width:220px;max-width:360px;font-size:11px;line-height:1.25}.rk td.nom > small{display:block;font-size:10.5px}
+.rk .pill{padding:1px 6px;font-size:10px}.rk .idc{font-size:10.5px}.rk .idc b{font-size:11px}
 th{color:var(--muted);font-weight:600;cursor:pointer}tbody tr{cursor:pointer}tbody tr:hover{background:#f0edff}tbody tr.sel{background:#e6e0ff}
 .num{text-align:right;font-variant-numeric:tabular-nums}.pill{padding:2px 7px;border-radius:6px;font-weight:700;font-size:11px;color:#fff}
 .b-EXCELENTE{background:#15803d}.b-BUENO{background:#65a30d}.b-ACEPTABLE{background:#ca8a04}.b-DEFICIENTE{background:#ea580c}.b-CRITICO{background:#dc2626}.b-EXTREMADAMENTE_CRITICO{background:#7f1d1d}.b-null{background:#9ca3af}
@@ -126,20 +130,26 @@ function fmt(x){return x==null?'—':Number(x).toFixed(1)}
 function fecha(d){return d?d.slice(0,10):'—'}
 function calif(x){return x==null?'—':Number(x).toFixed(1)}
 var CUPO_COL={NO_APLICA:'#d1d5db',SIN_CUPO:'#9ca3af',MINIMO:'#ea580c',MEDIO:'#ca8a04',ALTO:'#65a30d',MUY_ALTO:'#15803d',MAXIMO:'#2d1f7a'};
-function cupoCell(c){if(!c)return '—'; return '<span class="pill" style="background:'+(CUPO_COL[c.tramo]||'#9ca3af')+'" title="'+(c.motivos||[]).join(' · ').replace(/"/g,'&quot;')+'">'+c.tramo.replace('_',' ')+'</span><br><small>'+c.texto+'</small>'}
+function cupoCell(c){if(!c)return '<small>—</small>'; return '<span class="pill" style="background:'+(CUPO_COL[c.tramo]||'#9ca3af')+'" title="'+(c.motivos||[]).join(' · ').replace(/"/g,'&quot;')+'">'+c.tramo.replace('_',' ')+'</span>'+(c.texto&&c.texto!=='sin cupo'&&c.tramo!=='NO_APLICA'?'<small>'+c.texto+'</small>':'')}
 function idCell(id,rotulo){if(!id)return '<small>'+rotulo+': —</small>';
-  return '<span class="idc" data-id="'+id+'" title="Clic para copiar el ID de '+rotulo+'"><small>'+rotulo+'</small> '+id+' <b>⧉</b></span>'}
+  return '<span class="idc" data-id="'+id+'" title="Clic para copiar el ID ('+rotulo+')">'+id+' <b>⧉</b><small> '+rotulo+'</small></span>'}
 function copiarId(el){var id=el.dataset.id, ok=function(){var b=el.querySelector('b'); b.textContent='✓'; setTimeout(function(){b.textContent='⧉'},1200)};
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(id).then(ok,function(){copiarFallback(id);ok()})}else{copiarFallback(id);ok()}}
 function copiarFallback(t){var ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}document.body.removeChild(ta)}
 function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.push('<i>caso de prueba: '+r.caso+'</i>');
-  return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td><td><b>'+r.nombre+'</b><br><small>'+r.piloto_id+' · '+r.tipo+'</small></td>'+
-   '<td>'+idCell(r.driver_id||r.piloto_id,'piloto')+(r.passenger_id&&r.passenger_id!==r.driver_id?'<br>'+idCell(r.passenger_id,'pasajero'):'')+'</td><td>'+fecha(r.activado_piloto)+'<br>'+fecha(r.activado_pasajero)+'</td><td class="num"><b style="font-size:14px" title="rating_as_driver__fl de la app — NO es el promedio de lo que ponen los pasajeros (verificado 2026-09-16); lo que puntúa es calificacion_pasajero">'+calif(r.calif_app)+'</b></td>'+
-   '<td class="num"><b style="font-size:14px">'+calif(r.calif_gamification)+'</b>'+(r.gamif_final!=null?'<br><small title="nivel · total_score_points">nivel '+Math.round(r.gamif_final)+' · '+Math.round(r.gamif_puntos||0).toLocaleString('es-CO')+' pts</small>':'')+'</td>'+
-   '<td class="num"><b style="font-size:15px">'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<br><small>score '+fmt(r.score_comportamental)+'</small>':'')+'</td><td><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><br><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
-   '<td>'+cupoCell(r.cupo)+'</td><td class="est-'+r.estado+'">'+r.estado+'</td><td style="white-space:normal;min-width:260px;font-size:11px">'+(obs.length?obs.join('<br>'):'<small>Sin observaciones</small>')+'</td></tr>'}
+  var did=r.driver_id||r.piloto_id, pas=(r.passenger_id&&r.passenger_id!==did)?' · '+idCell(r.passenger_id,'pas.'):'';
+  var gam=r.calif_gamification==null&&r.gamif_final==null?'<small>—</small>':'<b>'+calif(r.calif_gamification)+'</b>'+(r.gamif_final!=null?'<small title="nivel · total_score_points">nivel '+Math.round(r.gamif_final)+' · '+Math.round(r.gamif_puntos||0).toLocaleString('es-CO')+' pts</small>':'');
+  return '<tr data-k="'+r.piloto_id+'|'+r.tipo+'" class="'+(SEL===r.piloto_id+'|'+r.tipo?'sel':'')+'"><td class="num">'+pos+'</td>'+
+   '<td class="nom"><b>'+r.nombre+'</b><small>'+idCell(did,r.tipo)+pas+'</small></td>'+
+   '<td class="sub"><small>piloto '+fecha(r.activado_piloto)+'</small><small>pasajero '+fecha(r.activado_pasajero)+'</small></td>'+
+   '<td class="sc" title="rating_as_driver__fl de la app — NO es el promedio de lo que ponen los pasajeros (verificado 2026-09-16); lo que puntúa es calificacion_pasajero"><b>'+calif(r.calif_app)+'</b></td>'+
+   '<td class="sc">'+gam+'</td>'+
+   '<td class="sc nuevo"><b>'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<small>sin tope '+fmt(r.score_comportamental)+'</small>':'')+'</td>'+
+   '<td class="sub"><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
+   '<td class="sub">'+cupoCell(r.cupo)+'</td><td class="est-'+r.estado+'">'+r.estado+'</td>'+
+   '<td class="obs">'+(obs.length?obs.join('<br>'):'<small>—</small>')+'</td></tr>'}
 function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
-  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><table><thead><tr><th>#</th><th>Piloto</th><th>ID</th><th>Activación piloto<br>Activación pasajero</th><th class="num" title="passengers.rating_as_driver__fl: la calificación que la app le muestra al piloto. Sólo contexto, no entra al score nuevo">Score app</th><th class="num" title="vw_atr_driver_scoring_with_frauds: new_final_score_pibox / new_final_score_rent (abajo el nivel y los puntos). Sólo contexto">Score gamification<br>anterior</th><th class="num" title="Score Operacional de Pilotos: el de esta metodología (0 – 5)">Score nuevo<br>(nuestro)</th><th>Banda</th><th title="Cupo de confianza: cuánto valor declarado / recaudo se le puede confiar">Cupo COP</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table>'}
+  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><div class="rk"><table><thead><tr><th>#</th><th>Piloto · ID</th><th>Activación</th><th class="num" title="passengers.rating_as_driver__fl: la calificación que la app le muestra al piloto. Sólo contexto, no entra al score nuevo">Score<br>app</th><th class="num" title="vw_atr_driver_scoring_with_frauds: new_final_score_pibox / new_final_score_rent (abajo el nivel y los puntos). Sólo contexto">Score gamif.<br>anterior</th><th class="num" title="Score Operacional de Pilotos: el de esta metodología (0 – 5)">Score<br>nuevo</th><th>Banda</th><th title="Cupo de confianza: cuánto valor declarado / recaudo se le puede confiar">Cupo COP</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table></div>'}
 function renderTabla(){
   if(!RANK) return; var t=$('tipo').value, tipos=t?[t]:['B2B','RENT','B2C'], h='', info=[];
   tipos.forEach(function(tp){var k=RANK[tp]; if(!k) return;
