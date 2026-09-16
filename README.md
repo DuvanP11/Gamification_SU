@@ -4,8 +4,8 @@ Motor local, parametrizable y auditable para puntuar pilotos en **B2B**, **Rent*
 **Cuenta de confianza**: `SCORE = base ganada (experiencia + antigüedad, 0 → 3.5; el
 recién activado arranca en 0.0) + lo que hace MEJOR que la referencia de su tipo (hasta
 +1.5, en proporción a la evidencia) − lo que hace PEOR y sus antecedentes (hasta −3.5)`.
-Cancelación, sin novedades, recaudo, alto valor y reservas son **mixtas** (la misma
-variable suma o resta); suspensiones, invitaciones, expulsión, IMEI, conducta
+Sin novedades, recaudo (pagado en 24 h y **entregado bien**), alto valor, reservas y la
+**calificación de los pasajeros** son **mixtas** (la misma variable suma o resta); suspensiones, invitaciones, expulsión, IMEI, conducta
 inapropiada confirmada y activación express **sólo restan**. Además calcula el **cupo de
 confianza en plata** (cuánto valor declarado / recaudo se le puede confiar).
 La metodología completa (fórmulas, tratamiento de casos, ejemplos, riesgos) está en
@@ -82,10 +82,14 @@ Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependenci
 
 `data/pilotos.csv` (una fila por piloto × tipo, ventana de 90 días más las columnas de
 ventana propia `vc_*` —cancelación a 6 meses— y `vn_*` —sin novedades a 1 año—; incluye contexto:
-`driver_id`, `passenger_id`, activaciones, `calif_gamification`, `calif_app`),
+`driver_id`, `passenger_id`, activaciones, `calif_gamification`, `calif_app` — este último
+sólo contexto: NO es el promedio de lo que ponen los pasajeros; lo que puntúa son
+`n_calificados` / `suma_calificaciones`, notas 1–5 en finalizados de 180 días),
 `data/eventos.csv` (una fila por evento disciplinario, con fecha y si sigue activo),
-`data/recaudos.csv` (un recaudo no abonado en el momento por fila: `fecha_recaudo`,
-`fecha_abono` vacío si sigue sin pagar) y `data/reglas_activas.csv` (reglas disparadas). Columnas vacías = dato no disponible (≠ 0), salvo los
+`data/recaudos.csv` (un recaudo contra entrega por fila, **todos** desde 2026-09-16:
+`fecha_recaudo`, `monto`, `fecha_abono` —primera pata positiva del booking, la usa
+`recaudo_24h`— y `fecha_saldado` —la billetera Picash volvió a ≥ 0, la usa
+`recaudo_entregado`; vacío = sigue en rojo) y `data/reglas_activas.csv` (reglas disparadas). Columnas vacías = dato no disponible (≠ 0), salvo los
 conteos básicos de servicios, que vacíos valen 0.
 
 ## Datos reales (ClickHouse → `data_real/`)
@@ -102,7 +106,9 @@ curl -sS --fail-with-body -w '→ HTTP %{http_code}\n' "https://clickhouse.picap
 
 Los CSV reales están en `.gitignore`. Supuestos de la extracción (a confirmar) están
 comentados al inicio de cada `sql/0*.sql`; `sql/00_descubrir_suspensiones.sql` sirve
-para completar el histórico de suspensiones e invitaciones.
+para completar el histórico de suspensiones e invitaciones. `sql/calibracion_calificacion.sql`
+da los percentiles del promedio de calificación por tipo para fijar `p0` / rampa de
+`calificacion_pasajero` en `config/parametros.yaml`.
 
 ### Documentos (RUNT / Policía / SOAT) e historial de suspensiones
 

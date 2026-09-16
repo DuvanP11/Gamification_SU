@@ -22,6 +22,8 @@
 | Servicio "con novedad" / "dentro de los tiempos" | Un flag por servicio finalizado: `ok = sin novedad AND a tiempo` | Catálogo de novedades y el SLA de tiempo por tipo |
 | Valor declarado "alto" | `valor_declarado ≥ umbral_valor[tipo]` (parámetro) | Umbral por tipo; se sugiere el percentil 80 de la población |
 | Reserva "atribuible al piloto" | Una causa de incumplimiento/cancelación pertenece al catálogo atribuible o no | Catálogo de causas |
+| Recaudo "entregado bien" / "con novedad" / "no pagó" (2026-09-16) | Sobre TODO recaudo contra entrega: **bien** = la billetera Picash del piloto volvió a ≥ 0 dentro de 24 h hábiles; **novedad** = volvió a ≥ 0 después del plazo; **no pagó** = sigue en rojo con el plazo vencido (pesa doble) → variable `recaudo_entregado` | Si "novedad" incluye además otra cosa (entrega parcial, reclamo del comercio) y de dónde sale; si el plazo es el mismo de `recaudo_24h` |
+| Calificación del pasajero al piloto (2026-09-16) | `bookings.rate_to_driver` 1–5 sólo en servicios finalizados; `''` (no calificó), `'0'` (saltó la calificación) y los cincos de cancelados quedan fuera → variable `calificacion_pasajero` | La referencia poblacional p₀ y los umbrales (correr `sql/calibracion_calificacion.sql`) |
 
 ---
 
@@ -87,6 +89,8 @@ a SQL / Excel / DAX, ver §16):
 | Baneo de IMEI | – | ✓ | – | Negativa + **restricción** si activo | Antecedentes | carga con decaimiento |
 | **Conducta inapropiada confirmada** (acoso / hostigamiento) | ✓ | ✓ | ✓ | Negativa | Antecedentes | carga con decaimiento, sólo casos "Con Novedad" |
 | Recaudo pagado en 24 h hábiles | ✓ | – | – | **Mixta** (tasa) + alerta si vencido | Comportamiento | balance vs. referencia; vencido sin pagar cuenta como tarde |
+| **Recaudo entregado bien** (2026-09-16) | ✓ | – | ✓ | **Mixta** (tasa) | Comportamiento | sobre TODOS los recaudos: bien suma, con novedad o sin pagar resta (no pago pesa doble) |
+| **Calificación del pasajero al piloto** (2026-09-16) | ✓ | ✓ | ✓ | **Mixta** (promedio 1–5) | Comportamiento | promedio suavizado de `rate_to_driver` en finalizados vs. referencia poblacional |
 | Servicios que canceló | ✓ | ✓ | ✓ | **Negativa** (tasa) | Comportamiento | resta sólo por encima de la referencia p₀ (mediana real por tipo); cancelar menos no suma |
 | Servicios finalizados | ✓ | ✓ | ✓ | Positiva | Base | volumen saturante (experiencia) |
 | **Antigüedad como piloto** | ✓ | ✓ | ✓ | Positiva | Base | días desde la activación, satura a `dias_ref` |
@@ -277,6 +281,70 @@ sub_finalizados = 5 · min(1, ln(1 + finalizados) / ln(1 + n_ref[tipo]))
   `arrayJoin(range(...))` y `toDayOfWeek(d) <= 5`. En Excel: `=NETWORKDAYS`-style con
   `DÍAS.LAB` para días enteros + horas de los extremos.
 
+### 3.7b Recaudo entregado bien (`recaudo_entregado`, B2B y B2C) — agregada 2026-09-16
+
+- **A.** ¿Cuando tuvo que entregar un recaudo contra entrega, lo hizo bien? Entregarlo bien
+  **suma**; entregarlo con novedad o no entregarlo **resta**. A diferencia de `recaudo_24h`,
+  acá entran **todos** los recaudos, incluidos los que abonó en el momento (que en
+  `recaudo_24h` ni siquiera son episodio): el que siempre entrega al toque gana puntos.
+- **B.** Por recaudo (`sql/03_recaudos.sql`, 90 días): `fecha_recaudo` (pata negativa de
+  `WalletAccountCounterDeliveryTransaction` con `package_id`), `monto` y `fecha_saldado` =
+  primera transacción de la **misma billetera Picash** desde el recaudo con
+  `amount_after_transaction ≥ 0` — el criterio de "saldado" del portal
+  (`RecaudosDeudaService`: la billetera volvió a cero). Con CSV viejos sin esa columna se usa
+  el abono del booking.
+- **C.** Horas hábiles entre recaudo y saldado (`horas_habiles`, lunes a viernes). Cajas:
+  `bien` (h ≤ 24) · `novedad` (saldado con h > 24) · `no_pago` (sin saldar y h > 24) ·
+  `en_plazo` (sin saldar, h ≤ 24 — **no cuenta**).
+  ```
+  n = bien + novedad + peso_no_pago · no_pago        (peso_no_pago = 2: no pagar es peor que pagar tarde)
+  tasa_ajustada = (bien + m·p₀) / (n + m),   p₀ = 0.90, m = 5
+  ```
+- **D.** `sub = rampa(tasa_ajustada, x₀ = 0.50, x₅ = 0.95)`; el neutro es `rampa(p₀)`.
+- **E/F.** Por encima de p₀ suma, por debajo resta. Un no pago vencido deja además la
+  observación "Recaudos sin entregar: k ($ monto)"; la alerta `recaudo_pendiente` la sigue
+  dando `recaudo_24h`, que no cambia.
+- **G.** Sin recaudos en la ventana → `sin_dato`. No aplica en Rent.
+- **Solapamiento con `recaudo_24h`:** un recaudo pagado tarde resta en las dos variables.
+  Se dejó así a propósito porque miden cosas distintas (`recaudo_24h` = disciplina cuando
+  no abonó en el momento, la definición confirmada del "24 hrs a excepción de un FDS";
+  `recaudo_entregado` = cumplimiento sobre todo lo que tuvo que entregar). Si Operaciones
+  prefiere una sola, se baja el peso de la otra en `pesos.yaml`; no hace falta tocar fórmulas.
+- SQL: `sql/03_recaudos.sql` (CTE `sal`).
+
+### 3.7c Calificación del pasajero al piloto (`calificacion_pasajero`, los tres tipos) — agregada 2026-09-16
+
+- **A.** Qué tan bien lo califican los pasajeros en la app, medido con el dato crudo por
+  servicio, **no** con `passengers.rating_as_driver__fl`: verificado el 2026-09-16 que ese
+  campo NO es el promedio de lo que ponen los pasajeros (promedio real 4,85 vs 4,05 en la
+  app, correlación 0,44; un piloto con 2.280 notas a 4,79 figura con 3,44).
+- **B.** `n_calificados` y `suma_calificaciones` (`sql/01_pilotos.sql`, 180 días): servicios
+  **finalizados** (status 4/107/108) con `rate_to_driver` en `'1'…'5'`. Quedan fuera `''`
+  (el pasajero nunca llegó a calificar), `'0'` (saltó la calificación —
+  `skip_rate_by_passenger = true` en el 100 %) y los cincos de servicios cancelados (~14 % de
+  los cincos, parecen valor por defecto). El comentario (`rate_to_driver_comment`) viene
+  vacío siempre, así que no se usa.
+- **C.** Promedio suavizado hacia la referencia poblacional (misma idea que la tasa
+  ajustada, sobre una nota 1–5):
+  ```
+  promedio_ajustado = (Σ notas + m·p₀) / (n + m),   p₀ = 4.85, m = 10
+  ```
+- **D.** `sub = rampa(promedio_ajustado, x₀ = 4.00, x₅ = 4.95)`; el neutro es `rampa(p₀) = 4.47`.
+- **E/F/G.** Por encima de la referencia suma, por debajo resta; sin notas → `sin_dato`.
+- **I.** Con pocas notas el promedio se pega a la referencia: 3 cincos dan `(15 + 48.5)/13 =
+  4.88` → apenas por encima del neutro; hacen falta decenas de notas para ganar el máximo.
+  El 92 % de las notas reales son 5, así que la escala es estrecha a propósito: 4,0 ya es
+  "lo peor" (el 38 % de los pilotos activos está por debajo de 4,0 **en la app**, pero eso
+  es el campo que no usamos).
+- **Calibración:** `sql/calibracion_calificacion.sql` da p10/p20/p50/p80/p90 del promedio por
+  tipo (pilotos con ≥ 20 notas): p₀ = mediana, `x₅` = p80, `x₀` = p10. Los valores actuales
+  son de arranque (media 4,85 medida el 2026-09-16 sobre pilotos con ≥ 50 notas en 365 d, que
+  todavía incluía cancelados).
+- **Consecuencia en Rent:** es la primera mixta que aplica en Rent, así que la base de Rent
+  vuelve a topar en 3,5 como en B2B/B2C (ver §9): un veterano Rent típico ya no queda en
+  ~4,9 por defecto; sube hasta 5 si los pasajeros lo califican por encima de la referencia.
+- SQL: ver §16.
+
 ### 3.8 Servicios totales por tipo (contexto)
 
 No puntúa. Alimenta `n_aplicables` (denominadores y **confianza**) y permite calcular la
@@ -293,7 +361,8 @@ Cada variable mira **su propia ventana**; lo que queda fuera no la afecta (pará
 | Servicios sin novedad y a tiempo | **último año** (365 d) | tasa sobre los finalizados del año |
 | Cumplimiento de reservas | **últimos 3 meses** (90 d) | tasa sobre las reservas de esos 3 meses |
 | Conducta inapropiada confirmada | **desde el 2026-07-01** (activación de la revisión), **sin decaimiento** | todos los casos confirmados desde julio pesan igual; cuando el módulo lleve más tiempo, pasar a ventana móvil o semivida |
-| Experiencia (base), recaudo, alto valor | 90 d (ventana por defecto) | — |
+| Calificación del pasajero | **últimos 6 meses** (180 d) | promedio de las notas 1–5 de los finalizados de esos 6 meses |
+| Experiencia (base), recaudo (las dos), alto valor | 90 d (ventana por defecto) | — |
 | Suspensiones, invitaciones, expulsión, IMEI, express | 730 d con semivida | pierden peso con el tiempo en vez de cortar de golpe |
 
 ## 6. Tratamiento de datos faltantes
@@ -361,13 +430,12 @@ estado      = BLOQUEADO  si alguna regla activa tiene efecto "bloqueo"
   3.5; lo que hace mejor lo sube hasta 5.0; lo que hace peor y sus antecedentes lo bajan
   hasta 0.0. Un recién activado arranca en 0.0 y con 8 servicios limpios está en ~1.7, al
   mes en ~3.4, a los tres meses en ~4.8.
-- **Tipos sin mixtas (hoy Rent):** cancelación pasó a ser sólo negativa y las demás mixtas no
-  aplican en Rent, así que no hay con qué ganar el margen de +1.5. Para que el techo siga
-  siendo alcanzable, donde no hay mixtas con dato la base llega hasta 5.0 (el motor lo hace
-  solo y lo muestra como `base_max = 5`). Consecuencia a decidir: un veterano Rent típico
-  queda en ~4.9 mientras uno B2B típico queda en 3.5. Si se quiere la misma escala, hace
-  falta una mixta en Rent — la candidata natural es la **calificación en la app**
-  (`rating_as_driver`), que ya se extrae como contexto.
+- **Tipos sin mixtas con dato:** donde ninguna mixta aplica o tiene dato no hay con qué
+  ganar el margen de +1.5, así que la base llega hasta 5.0 (el motor lo hace solo y lo
+  muestra como `base_max = 5`). Hasta el 2026-09-15 ese era el caso de **todo Rent** (un
+  veterano Rent típico quedaba en ~4.9 contra 3.5 en B2B); desde el 2026-09-16
+  `calificacion_pasajero` aplica en los tres tipos y Rent queda en la misma escala. Un Rent
+  sin ninguna nota de pasajero en 180 días sigue cayendo en este caso.
 - `α` (`alpha_antecedentes`, por defecto 1.0): intensidad de las pérdidas. Con `α = 1`
   "todo en lo peor" deja el score en 0; con `α = 0.5` pierde como mucho la mitad de la base.
 - **Ninguna variable domina**: una mixta puede sumar hasta `1.5 · w_v / Σ w_mixtas` y
@@ -416,6 +484,8 @@ validada con datos**. Está en `config/pesos.yaml` y se puede mover con el afina
 | Negativa (−) | cancelacion_piloto | 15 | 25 | 18 | Resta sólo por encima de la mediana real por tipo (p90 = −1); cancelar menos no suma |
 | Mixta (±) | sin_novedades | 14 | – | 14 | Referencia 90 % |
 | Mixta (±) | recaudo_24h | 8 | – | – | Referencia 85 % a tiempo; vencido sin pagar cuenta como tarde |
+| Mixta (±) | recaudo_entregado | 10 | – | 10 | Todos los recaudos: bien suma, novedad/no pago resta (no pago ×2). Referencia 90 % |
+| Mixta (±) | calificacion_pasajero | 6 | 12 | 8 | Promedio de notas 1–5 en finalizados vs. referencia 4,85; en Rent es la única mixta |
 | Mixta (±) | alto_valor | 10 | – | 12 | Balance de cumplimiento × exposición (no premia por caro) |
 | Mixta (±) | cumplimiento_reservas | 8 | – | – | Referencia 90 % |
 | Negativa (−) | suspension_piloto | 15 | 18 | 15 | El antecedente más relevante |
@@ -426,7 +496,7 @@ validada con datos**. Está en `config/pesos.yaml` y se puede mover con el afina
 | Negativa (−) | baneo_imei | – | 10 | – | Sólo Rent (la activa restringe) |
 | Negativa (−) | conducta_inapropiada | 8 | 8 | 8 | Casos "Con Novedad" confirmados; moderado (tope 5) |
 | Negativa (−) | activacion_express | 6 | 6 | 6 | Se apaga con semivida de 120 días |
-| | **Σ base / Σ mixtas / Σ negativas** | 26 / 40 / 69 | 25 / 0 / 99 | 26 / 26 / 78 | |
+| | **Σ base / Σ mixtas / Σ negativas** | 26 / 56 / 69 | 25 / 12 / 99 | 26 / 44 / 78 | |
 
 Calibración sugerida antes de fijarlos: correr el motor sobre la población real de 90
 días, mirar la distribución de cada sub-score (que no esté todo pegado a 5 ni a 0), fijar
@@ -435,7 +505,7 @@ días, mirar la distribución de cada sub-score (que no esté todo pegado a 5 ni
 conocidos: los que ellos consideran ejemplares deben quedar arriba y los problemáticos
 abajo. Si no, mover pesos — no fórmulas.
 
-## 12. Ejemplos numéricos (12 casos ficticios con nombre, corte 2026-09-15)
+## 12. Ejemplos numéricos (12 casos ficticios con nombre, corte 2026-09-15; regenerados 2026-09-16 con `recaudo_entregado` y `calificacion_pasajero`)
 
 Generados con `python3 docs/generar_ejemplos.py` sobre `data/*.csv` (D = desempeño,
 P = penalización de antecedentes). `data/` trae además 120 pilotos ficticios sin nombre de
@@ -443,18 +513,18 @@ caso (`data/generar_datos_ficticios.py`) para que el ranking top/medio/peores se
 
 | Piloto | Tipo | Caso | Base | +mejor / −peor | Score | Final | Banda | Vigencia | Estado | Observaciones |
 |---|---|---|---:|---:|---:|---:|---|---|---|---|
-| P001 | B2B | buen comportamiento sostenido | 3.5 | +1.01 / −0.00 | 4.5 | **4.5** | EXCELENTE | DEFINITIVO (1.0) | OK | — |
-| P002 | RENT | piloto nuevo (12 días), pocos servicios, activación express | 1.4 | +0.00 / −0.28 | 1.1 | **1.1** | CRITICO | PROVISIONAL (0.35) | OK | Piloto NUEVO: activado hace 12 días — arranca en 0.0 y sube con lo que haga; Activado por la vía EXPRESS (menos validación al entrar); Piloto con pocos servicios en la ventana: 7 de 20 necesarios (score provisional) |
-| P003 | RENT | suspensión antigua + muchas finalizaciones | 5.0 | +0.00 / −0.04 | 5.0 | **5.0** | EXCELENTE | DEFINITIVO (1.0) | OK | Suspensión como piloto hace 603 días |
-| P004 | B2C | comportamiento negativo reciente | 3.0 | +0.00 / −0.73 | 2.3 | **2.3** | DEFICIENTE | DEFINITIVO (1.0) | OK | Suspensión como piloto hace 10 días; Invitación Pibox hace 20 días; Conducta inapropiada confirmada hace 82 días; Novedades frecuentes: sólo 30 de 40 sin novedad y a tiempo (75%); Novedades en servicios de alto valor: 5 de 8 bien |
-| P005 | B2B | alto valor con muchas novedades | 3.4 | +0.00 / −0.51 | 2.9 | **2.9** | ACEPTABLE | DEFINITIVO (1.0) | OK | Novedades frecuentes: sólo 70 de 90 sin novedad y a tiempo (78%); Novedades en servicios de alto valor: 28 de 40 bien; Incumple reservas: 4 de 14 |
-| P006 | RENT | múltiples suspensiones + IMEI baneado | 4.8 | +0.00 / −1.40 | 3.4 | **3.4** | ACEPTABLE | DEFINITIVO (1.0) | BLOQUEADO [baneo_imei] ⚠ imei_compartido | Baneo de IMEI VIGENTE; 3 suspensiones como piloto (última hace 30 días); Baneo de IMEI hace 14 días; Regla activa: imei_compartido |
+| P001 | B2B | buen comportamiento sostenido | 3.5 | +0.86 / −0.03 | 4.3 | **4.3** | BUENO | DEFINITIVO (1.0) | OK | Entregó bien sus 7 recaudos |
+| P002 | RENT | piloto nuevo (12 días), pocos servicios, activación express | 1.0 | +0.00 / −0.20 | 0.8 | **0.8** | CRITICO | PROVISIONAL (0.35) | OK | Piloto NUEVO: activado hace 12 días — arranca en 0.0 y sube con lo que haga; Activado por la vía EXPRESS (menos validación al entrar); Piloto con pocos servicios en la ventana: 7 de 20 necesarios (score provisional) |
+| P003 | RENT | suspensión antigua + muchas finalizaciones | 3.5 | +0.72 / −0.03 | 4.2 | **4.2** | BUENO | DEFINITIVO (1.0) | OK | Suspensión como piloto hace 603 días |
+| P004 | B2C | comportamiento negativo reciente | 3.0 | +0.00 / −1.03 | 2.0 | **2.0** | DEFICIENTE | DEFINITIVO (1.0) | OK | Suspensión como piloto hace 10 días; Invitación Pibox hace 20 días; Conducta inapropiada confirmada hace 24 días; Novedades frecuentes: sólo 117 de 147 sin novedad y a tiempo (80%); Novedades en servicios de alto valor: 5 de 8 bien; Recaudos sin entregar: 2 de 3 ($245,000); Calificación baja de los pasajeros: 4.10 en 48 servicios |
+| P005 | B2B | alto valor con muchas novedades | 3.4 | +0.00 / −0.71 | 2.7 | **2.7** | ACEPTABLE | DEFINITIVO (1.0) | OK ⚠ recaudo_pendiente (1 vencido/s sin pagar) | Novedades frecuentes: sólo 267 de 373 sin novedad y a tiempo (72%); Novedades en servicios de alto valor: 28 de 40 bien; Incumple reservas: 4 de 14; Recaudo vencido sin pagar (1); Recaudos sin entregar: 1 de 4 ($48,000) |
+| P006 | RENT | múltiples suspensiones + IMEI baneado | 3.4 | +0.00 / −1.08 | 2.3 | **2.3** | DEFICIENTE | DEFINITIVO (1.0) | BLOQUEADO [baneo_imei] ⚠ imei_compartido | Baneo de IMEI VIGENTE; 3 suspensiones como piloto (última hace 30 días); Baneo de IMEI hace 14 días; Calificación baja de los pasajeros: 4.35 en 151 servicios; Regla activa: imei_compartido |
 | P007 | B2C | piloto nuevo (3 días) con cero servicios: arranca en 0.0 | 0.0 | +0.00 / −0.00 | 0.0 | **0.0** | EXTREMADAMENTE_CRITICO | PROVISIONAL (0.0) | OK | Piloto NUEVO: activado hace 3 días — arranca en 0.0 y sube con lo que haga; Piloto con pocos servicios en la ventana: 0 de 20 necesarios (score provisional) |
-| P008 | B2B | expulsión histórica (reintegrado) | 3.1 | +0.25 / −0.18 | 3.2 | **3.2** | ACEPTABLE | DEFINITIVO (1.0) | OK ⚠ cancelaciones_en_racha | Expulsión hace 400 días; Regla activa: cancelaciones_en_racha |
-| P009 | RENT | una sola cancelación | 4.7 | +0.00 / −0.00 | 4.7 | **4.7** | EXCELENTE | DEFINITIVO (1.0) | OK | — |
-| P010 | B2C | muchos servicios de alto valor bien atendidos | 3.5 | +1.50 / −0.00 | 5.0 | **5.0** | EXCELENTE | DEFINITIVO (1.0) | OK | — |
-| P011 | B2B | cuenta nueva con tope por regla | 1.6 | +0.74 / −0.04 | 2.3 | **2.3** | DEFICIENTE | DEFINITIVO (1.0) | OK ⚠ cuenta_nueva_retiro_alto | Piloto NUEVO: activado hace 20 días — arranca en 0.0 y sube con lo que haga; Suspensión como pasajero hace 76 días; Regla activa: cuenta_nueva_retiro_alto |
-| P012 | B2B | recaudos pagados tarde y uno vencido | 3.3 | +0.66 / −0.16 | 3.8 | **3.8** | BUENO | DEFINITIVO (1.0) | OK ⚠ recaudo_pendiente (1 vencido/s sin pagar) | Recaudo vencido sin pagar (1); Recaudos pagados después de 24 h: 2 de 4 |
+| P008 | B2B | expulsión histórica (reintegrado) | 3.1 | +0.16 / −0.21 | 3.1 | **3.1** | ACEPTABLE | DEFINITIVO (1.0) | OK ⚠ cancelaciones_en_racha | Expulsión hace 400 días; Regla activa: cancelaciones_en_racha |
+| P009 | RENT | una sola cancelación | 3.3 | +0.06 / −0.00 | 3.3 | **3.3** | ACEPTABLE | DEFINITIVO (1.0) | OK | — |
+| P010 | B2C | muchos servicios de alto valor bien atendidos | 3.5 | +1.50 / −0.00 | 5.0 | **5.0** | EXCELENTE | DEFINITIVO (1.0) | OK | Entregó bien sus 5 recaudos |
+| P011 | B2B | cuenta nueva con tope por regla | 1.6 | +0.77 / −0.04 | 2.4 | **2.4** | DEFICIENTE | DEFINITIVO (1.0) | OK ⚠ cuenta_nueva_retiro_alto | Piloto NUEVO: activado hace 20 días — arranca en 0.0 y sube con lo que haga; Suspensión como pasajero hace 76 días; Regla activa: cuenta_nueva_retiro_alto |
+| P012 | B2B | recaudos pagados tarde y uno vencido | 3.3 | +0.27 / −0.39 | 3.2 | **3.2** | ACEPTABLE | DEFINITIVO (1.0) | OK ⚠ recaudo_pendiente (1 vencido/s sin pagar) | Recaudo vencido sin pagar (1); Recaudos pagados después de 24 h: 2 de 4; Recaudos sin entregar: 1 de 4 ($150,000); Recaudos entregados con novedad (fuera de plazo): 2 de 4 |
 
 Lectura caso por caso (§12 del requerimiento):
 
@@ -472,104 +542,127 @@ Lectura caso por caso (§12 del requerimiento):
 - **Una sola cancelación** (P009, 1/101): 4.8, prácticamente sin efecto.
 - **Muchas cancelaciones** (P006, 20/142 = 14 %): sub 2.7 en la variable de más peso en Rent.
 - **Muchas finalizaciones** (P003, 400): `finalizados` satura en 5; no sigue sumando.
-- **Alto valor bien atendido** (P010, 59/60): alto_valor 4.9 → 5.0 total.
-- **Alto valor con novedades** (P005, 28/40): alto_valor 1.65 y baja a ACEPTABLE aunque
-  no tenga antecedentes — ver desglose abajo.
-- **Buen comportamiento sostenido** (P001): 4.9 EXCELENTE.
-- **Negativo reciente** (P004): suspensión hace 10 d + invitación + 18 % cancelación → 2.1.
-- **Variable no aplicable**: en P006 (RENT) `alto_valor`, `sin_novedades`, `reservas` y
-  `recaudo_24h` figuran como `no_aplica` y no pesan.
-- **Recaudo tarde / vencido** (P012): 1 a tiempo (viernes → lunes, 22 h hábiles), 2 tarde
-  y 1 vencido sin pagar → sub 1.8 + alerta `recaudo_pendiente`.
+- **Alto valor bien atendido** (P010, 59/60): alto_valor 4.9, 5 recaudos entregados al
+  toque y calificación 4,97 → 5.0 total.
+- **Alto valor con novedades** (P005, 28/40): alto_valor 1.65, 72 % sin novedad y 1 recaudo
+  sin entregar → 2.7 ACEPTABLE aunque no tenga antecedentes — ver desglose abajo.
+- **Buen comportamiento sostenido** (P001): 4.3 BUENO. Bajó de 4.9 al agregar las dos mixtas
+  nuevas: el margen de +1.5 se reparte entre más variables y sus 7 recaudos y 4,96 de
+  calificación, con pocas observaciones, todavía no ganan el máximo.
+- **Negativo reciente** (P004): suspensión hace 10 d + invitación + conducta + 2 recaudos sin
+  entregar + calificación 4,10 → 2.0.
+- **Variable no aplicable**: en P006 (RENT) `alto_valor`, `sin_novedades`, `reservas`,
+  `recaudo_24h` y `recaudo_entregado` figuran como `no_aplica` y no pesan; `calificacion_pasajero`
+  sí (4,35 → resta) y por eso la base de Rent vuelve a topar en 3.5.
+- **Recaudo tarde / vencido** (P012): en `recaudo_24h` 1 a tiempo (viernes → lunes, 22 h
+  hábiles), 2 tarde y 1 vencido → sub 1.6 + alerta `recaudo_pendiente`; en `recaudo_entregado`
+  los mismos 4 recaudos dan 1 bien / 2 con novedad / 1 no pago (pesa doble) → sub 0.6.
+  Las dos restan: es el solapamiento descrito en §3.7b.
+- **Calificación del pasajero**: P003 (4,90) y P001 (4,96) por encima de la referencia
+  suman poco; P004 (4,10) y P006 (4,35) restan. Con la escala real (92 % de cincos) una
+  décima de promedio ya mueve el balance.
 
 ## 13. Ejemplo B2B (P005 — alto valor con novedades, sin antecedentes)
-**P005 · Elena Quintero (alto valor con muchas novedades) · B2B** — base 3.37 + 0.00 − 0.51 = 2.86 → **2.9** (ACEPTABLE, DEFINITIVO, estado OK)
+**P005 · Elena Quintero (alto valor con muchas novedades) · B2B** — base 3.37 + 0.00 − 0.71 = 2.67 → **2.7** (ACEPTABLE, DEFINITIVO, estado OK)
 
 | Variable | Bloque | Sub-score | Peso efectivo | Aporte (±) | Cálculo |
 |---|---|---:|---:|---:|---|
-| suspension_piloto | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=2.0 |
-| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0 |
-| invitacion_pibox | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0 |
-| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0 |
-| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0 |
+| suspension_piloto | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=2.0, desde=None, sin_decaimiento=False |
+| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0, desde=None, sin_decaimiento=False |
+| invitacion_pibox | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0, desde=None, sin_decaimiento=False |
+| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0, desde=None, sin_decaimiento=False |
+| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0, desde=None, sin_decaimiento=False |
 | baneo_imei | — | — | — | — | *no_aplica* |
-| conducta_inapropiada | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=5.0 |
+| conducta_inapropiada | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=5.0, desde=2026-07-01, sin_decaimiento=True |
 | antiguedad | base | 5.00 | 46.2% | +1.62 | dias=700, dias_ref=90, desde=2024-10-15 |
 | activacion_express | negativa | 5.00 | 0.0% | +0.00 | express=0 |
-| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=2, n=92, referencia_p0=0.35, tasa_cruda=0.0217, tasa_ajustada=0.0539, excluidos_no_atribuibles=6 |
+| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=3, n=194, ventana_dias=180, referencia_p0=0.35, tasa_cruda=0.0155, tasa_ajustada=0.0319, excluidos_no_atribuibles=12 |
 | finalizados | base | 4.66 | 53.8% | +1.76 | n=90, n_ref=125, tasa_finalizacion=0.9783 |
-| sin_novedades | mixta | 2.57 | 43.8% | -0.18 | x=70, n=90, referencia_p0=0.9, tasa_cruda=0.7778, tasa_ajustada=0.79 |
-| alto_valor | mixta | 1.65 | 31.2% | -0.21 | n_alto_valor=40, ok=28, proporcion=0.4444, exposicion=1.0, cumplimiento_ajustado=0.7222, score_neutro=4.054, score_desempeno=1.652 |
-| recaudo_24h | — | — | — | — | *sin_dato* |
-| cumplimiento_reservas | mixta | 2.21 | 25.0% | -0.13 | cumplidas=10, referencia_p0=0.9, incumplidas_atrib=4, n=14, no_atribuibles_excluidas=1, tasa_cruda=0.7143, tasa_ajustada=0.7632 |
+| sin_novedades | mixta | 1.63 | 25.0% | -0.23 | x=267, n=373, ventana_dias=365, referencia_p0=0.9, tasa_cruda=0.7158, tasa_ajustada=0.7206 |
+| alto_valor | mixta | 1.65 | 17.9% | -0.17 | n_alto_valor=40, ok=28, proporcion=0.4444, exposicion=1.0, cumplimiento_ajustado=0.7222, score_neutro=4.054, score_desempeno=1.652 |
+| recaudo_24h | mixta | 2.71 | 14.3% | -0.07 | episodios=1, referencia_p0=0.85, a_tiempo=0, tarde=0, vencidos_sin_pagar=1, pendientes_en_plazo=0, n=1, limite_horas=24.0, tasa_cruda=0.0, tasa_ajustada=0.7083, horas_por_episodio=[None] |
+| recaudo_entregado | mixta | 2.78 | 17.9% | -0.10 | recaudos=4, bien=3, novedad=0, no_pago=1, en_plazo=0, n=5.0, peso_no_pago=2.0, plazo_horas_habiles=24.0, ventana_dias=90, referencia_p0=0.9, monto_total=336000.0, monto_no_pagado=48000.0, tasa_cruda=0.6, tasa_ajustada=0.75 |
+| calificacion_pasajero | mixta | 3.73 | 10.7% | -0.03 | n=95, suma=446.0, ventana_dias=180, referencia_p0=4.85, promedio_crudo=4.695, promedio_ajustado=4.71 |
+| cumplimiento_reservas | mixta | 2.21 | 14.3% | -0.10 | cumplidas=10, ventana_dias=90, referencia_p0=0.9, incumplidas_atrib=4, n=14, no_atribuibles_excluidas=1, tasa_cruda=0.7143, tasa_ajustada=0.7632 |
 
 Cómo se lee: base ganada 3.37 (antigüedad +1.62, experiencia +1.76). Nada suma por encima de
-la referencia (su 2 % de cancelación ya no premia: la variable sólo resta). Resta: sólo 78 %
-sin novedad (−0.18), 28 de 40 servicios de alto valor bien (−0.21), 4 reservas incumplidas de
-14 (−0.13) → 3.37 − 0.51 = **2.9 ACEPTABLE**. Sin antecedentes; es su propia operación la
-que la deja ahí. Cupo: MÍNIMO (el score da MEDIO, pero las novedades en alto valor bajan un
-tramo).
+la referencia (su 2 % de cancelación ya no premia: la variable sólo resta; su calificación
+4,70 está por debajo de 4,85). Resta: sólo 72 % sin novedad (−0.23), 28 de 40 servicios de
+alto valor bien (−0.17), 4 reservas incumplidas de 14 (−0.10), 1 recaudo de 4 sin entregar
+(−0.10 en `recaudo_entregado` y −0.07 en `recaudo_24h`) y la calificación (−0.03) → 3.37 −
+0.71 = **2.7 ACEPTABLE**. Sin antecedentes; es su propia operación la que la deja ahí. Cupo:
+SIN_CUPO — el score daría MEDIO, pero el recaudo vencido sin pagar cierra la compuerta.
 
 ## 14. Ejemplo Rent (P006 — múltiples suspensiones, IMEI baneado, regla de bloqueo)
-**P006 · Fabián Ospina (múltiples suspensiones + IMEI baneado) · RENT** — base 4.80 + 0.00 − 1.40 = 3.40 → **3.4** (ACEPTABLE, DEFINITIVO, estado BLOQUEADO)
+**P006 · Fabián Ospina (múltiples suspensiones + IMEI baneado) · RENT** — base 3.36 + 0.00 − 1.08 = 2.28 → **2.3** (DEFICIENTE, DEFINITIVO, estado BLOQUEADO)
 
 | Variable | Bloque | Sub-score | Peso efectivo | Aporte (±) | Cálculo |
 |---|---|---:|---:|---:|---|
-| suspension_piloto | negativa | 0.00 | 0.0% | -0.91 | n_eventos=3, en_ventana=3, carga=2.061, tope=2.0 |
-| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0 |
-| invitacion_pibox | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0 |
-| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0 |
-| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0 |
-| baneo_imei | negativa | 0.13 | 0.0% | -0.49 | n_eventos=1, en_ventana=1, carga=0.974, tope=1.0 |
-| conducta_inapropiada | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=5.0 |
-| antiguedad | base | 5.00 | 40.0% | +2.00 | dias=800, dias_ref=90, desde=2024-07-07 |
+| suspension_piloto | negativa | 0.00 | 0.0% | -0.57 | n_eventos=3, en_ventana=3, carga=2.061, tope=2.0, desde=None, sin_decaimiento=False |
+| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0, desde=None, sin_decaimiento=False |
+| invitacion_pibox | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0, desde=None, sin_decaimiento=False |
+| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0, desde=None, sin_decaimiento=False |
+| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0, desde=None, sin_decaimiento=False |
+| baneo_imei | negativa | 0.13 | 0.0% | -0.31 | n_eventos=1, en_ventana=1, carga=0.974, tope=1.0, desde=None, sin_decaimiento=False |
+| conducta_inapropiada | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=5.0, desde=2026-07-01, sin_decaimiento=True |
+| antiguedad | base | 5.00 | 40.0% | +1.40 | dias=800, dias_ref=90, desde=2024-07-07 |
 | activacion_express | negativa | 5.00 | 0.0% | +0.00 | express=0 |
-| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=20, n=142, referencia_p0=0.34, tasa_cruda=0.1408, tasa_ajustada=0.1539, excluidos_no_atribuibles=16 |
-| finalizados | base | 4.66 | 60.0% | +2.80 | n=120, n_ref=170, tasa_finalizacion=0.8451 |
+| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=47, n=309, ventana_dias=180, referencia_p0=0.34, tasa_cruda=0.1521, tasa_ajustada=0.158, excluidos_no_atribuibles=30 |
+| finalizados | base | 4.66 | 60.0% | +1.96 | n=120, n_ref=170, tasa_finalizacion=0.8451 |
 | sin_novedades | — | — | — | — | *no_aplica* |
 | alto_valor | — | — | — | — | *no_aplica* |
 | recaudo_24h | — | — | — | — | *no_aplica* |
+| recaudo_entregado | — | — | — | — | *no_aplica* |
+| calificacion_pasajero | mixta | 2.01 | 100.0% | -0.21 | n=151, suma=657.0, ventana_dias=180, referencia_p0=4.85, promedio_crudo=4.351, promedio_ajustado=4.382 |
 | cumplimiento_reservas | — | — | — | — | *no_aplica* |
 
-Cómo se lee: en Rent no hay mixtas, así que la base llega a 5: 4.80 (antigüedad +2.00,
-experiencia +2.80). Su 14 % de cancelación está por debajo de la mediana Rent (34 %) → 0 (no
-suma ni resta). Resta: tres suspensiones al tope −0.91 y el IMEI reciente −0.49 → 4.80 − 1.40
-= **3.4 ACEPTABLE**. Pero el IMEI activo lo deja RESTRINGIDO y la regla `imei_compartido` lo
-deja **BLOQUEADO**: el score se muestra, el cupo no aplica en Rent y no habilita nada.
+Cómo se lee: desde el 2026-09-16 Rent tiene una mixta (`calificacion_pasajero`), así que la
+base topa en 3.5 como en los demás tipos: 3.36 (antigüedad +1.40, experiencia +1.96). Su 15 %
+de cancelación está por debajo de la mediana Rent (34 %) → 0 (no suma ni resta). Resta: tres
+suspensiones al tope −0.57, el IMEI reciente −0.31 y una calificación de 4,35 en 151 servicios
+(muy por debajo de la referencia 4,85) −0.21 → 3.36 − 1.08 = **2.3 DEFICIENTE** (antes 3.4:
+la mitad de la caída es la nueva escala de la base, la otra mitad la calificación). El IMEI
+activo lo deja RESTRINGIDO y la regla `imei_compartido` lo deja **BLOQUEADO**: el score se
+muestra, el cupo no aplica en Rent y no habilita nada.
 
 ## 15. Ejemplo B2C (P004 — comportamiento negativo reciente)
-**P004 · Diego Salazar (comportamiento negativo reciente) · B2C** — base 3.01 + 0.00 − 0.73 = 2.28 → **2.3** (DEFICIENTE, DEFINITIVO, estado OK)
+**P004 · Diego Salazar (comportamiento negativo reciente) · B2C** — base 3.01 + 0.00 − 1.03 = 1.98 → **2.0** (DEFICIENTE, DEFINITIVO, estado OK)
 
 | Variable | Bloque | Sub-score | Peso efectivo | Aporte (±) | Cálculo |
 |---|---|---:|---:|---:|---|
-| suspension_piloto | negativa | 2.59 | 0.0% | -0.25 | n_eventos=1, en_ventana=1, carga=0.962, tope=2.0 |
-| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0 |
-| invitacion_pibox | negativa | 3.93 | 0.0% | -0.07 | n_eventos=1, en_ventana=1, carga=0.857, tope=4.0 |
-| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0 |
-| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0 |
+| suspension_piloto | negativa | 2.59 | 0.0% | -0.21 | n_eventos=1, en_ventana=1, carga=0.962, tope=2.0, desde=None, sin_decaimiento=False |
+| suspension_pasajero | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=3.0, desde=None, sin_decaimiento=False |
+| invitacion_pibox | negativa | 3.93 | 0.0% | -0.06 | n_eventos=1, en_ventana=1, carga=0.857, tope=4.0, desde=None, sin_decaimiento=False |
+| invitacion_rent | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=4.0, desde=None, sin_decaimiento=False |
+| expulsion | negativa | 5.00 | 0.0% | +0.00 | n_eventos=0, en_ventana=0, carga=0.0, tope=1.0, desde=None, sin_decaimiento=False |
 | baneo_imei | — | — | — | — | *no_aplica* |
-| conducta_inapropiada | negativa | 4.27 | 0.0% | -0.04 | n_eventos=1, en_ventana=1, carga=0.729, tope=5.0 |
+| conducta_inapropiada | negativa | 4.00 | 0.0% | -0.05 | n_eventos=1, en_ventana=1, carga=1.0, tope=5.0, desde=2026-07-01, sin_decaimiento=True |
 | antiguedad | base | 5.00 | 46.2% | +1.62 | dias=400, dias_ref=90, desde=2025-08-11 |
 | activacion_express | negativa | 5.00 | 0.0% | +0.00 | express=0 |
-| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=9, n=50, referencia_p0=0.42, tasa_cruda=0.18, tasa_ajustada=0.22, excluidos_no_atribuibles=5 |
+| cancelacion_piloto | negativa | 5.00 | 0.0% | +0.00 | x=18, n=102, ventana_dias=180, referencia_p0=0.42, tasa_cruda=0.1765, tasa_ajustada=0.1982, excluidos_no_atribuibles=10 |
 | finalizados | base | 3.70 | 53.8% | +1.39 | n=40, n_ref=150, tasa_finalizacion=0.8 |
-| sin_novedades | mixta | 2.43 | 56.6% | -0.19 | x=30, n=40, referencia_p0=0.9, tasa_cruda=0.75, tasa_ajustada=0.78 |
-| alto_valor | mixta | 2.01 | 43.4% | -0.18 | n_alto_valor=8, ok=5, proporcion=0.2, exposicion=0.8944, cumplimiento_ajustado=0.7308, score_neutro=4.054, score_desempeno=1.767 |
+| sin_novedades | mixta | 2.74 | 32.8% | -0.13 | x=117, n=147, ventana_dias=365, referencia_p0=0.9, tasa_cruda=0.7959, tasa_ajustada=0.8025 |
+| alto_valor | mixta | 2.01 | 25.1% | -0.16 | n_alto_valor=8, ok=5, proporcion=0.2, exposicion=0.8944, cumplimiento_ajustado=0.7308, score_neutro=4.054, score_desempeno=1.767 |
 | recaudo_24h | — | — | — | — | *no_aplica* |
+| recaudo_entregado | mixta | 0.56 | 23.4% | -0.25 | recaudos=3, bien=1, novedad=0, no_pago=2, en_plazo=0, n=5.0, peso_no_pago=2.0, plazo_horas_habiles=24.0, ventana_dias=90, referencia_p0=0.9, monto_total=280000.0, monto_no_pagado=245000.0, tasa_cruda=0.2, tasa_ajustada=0.55 |
+| calificacion_pasajero | mixta | 1.23 | 18.7% | -0.17 | n=48, suma=197.0, ventana_dias=180, referencia_p0=4.85, promedio_crudo=4.104, promedio_ajustado=4.233 |
 | cumplimiento_reservas | — | — | — | — | *no_aplica* |
 
 Cómo se lee: base 3.01 (antigüedad +1.62, experiencia +1.39). Su 18 % de cancelación queda
-por debajo de la mediana B2C (42 %) → 0. Resta: 75 % sin novedad −0.19, 5 de 8 en alto valor
-−0.18, la suspensión de hace 10 días −0.25, la invitación −0.07 y el caso de **conducta
-inapropiada confirmado** hace 82 días −0.04 → 3.01 − 0.73 = **2.3 DEFICIENTE**. Dentro de 6
-meses, sin nuevos eventos, la suspensión pesará la mitad.
+por debajo de la mediana B2C (42 %) → 0. Resta: 80 % sin novedad −0.13, 5 de 8 en alto valor
+−0.16, **2 de 3 recaudos sin entregar** −0.25 (el no pago pesa doble), calificación 4,10 en 48
+servicios −0.17, la suspensión de hace 10 días −0.21, la invitación −0.06 y el caso de
+**conducta inapropiada confirmado** hace 24 días −0.05 → 3.01 − 1.03 = **2.0 DEFICIENTE**.
+Dentro de 6 meses, sin nuevos eventos, la suspensión pesará la mitad; los recaudos sin
+entregar salen de la ventana a los 90 días — o antes, si los salda.
 
 ## 16. Implementación en SQL / Python / Power BI
 
 **Contexto que acompaña al score** (no puntúa, se muestra en el ranking): `driver_id`,
 `passenger_id`, nombre real (`passengers`), fecha de activación como piloto y como
 pasajero, calificación del **gamification** (BD ClickHouse existente — tabla por ubicar)
-y calificación en la **app**. Las **observaciones** (piloto nuevo, cancelación alta,
+y calificación en la **app** (`rating_as_driver__fl`; sólo contexto — NO es el promedio de
+lo que ponen los pasajeros, ver §3.7c). Las **observaciones** (piloto nuevo, cancelación alta,
 suspensión hace N días, recaudo vencido…) las genera el motor a partir de los sub-scores,
 no se escriben a mano. El ranking se presenta como **top 10 mejores / 10 del medio / 10
 peores** por tipo.

@@ -19,7 +19,8 @@ COLS = ["piloto_id","nombre","caso","tipo","driver_id","passenger_id","activado_
         "calif_gamification","calif_app","activacion_express",
         "vc_n_cancel_piloto","vc_n_finalizados","vc_n_otros_atribuibles","vc_n_no_atribuibles","vn_n_finalizados","vn_n_sin_novedad_a_tiempo","dias_antiguedad","n_finalizados","n_cancel_piloto","n_cancel_pasajero",
         "n_cancel_plataforma","n_otros_atribuibles","n_sin_novedad_a_tiempo","n_alto_valor","n_alto_valor_ok",
-        "n_res_cumplidas","n_res_incumplidas_atrib","n_res_cancel_atrib","n_res_no_atrib"]
+        "n_res_cumplidas","n_res_incumplidas_atrib","n_res_cancel_atrib","n_res_no_atrib",
+        "n_calificados","suma_calificaciones"]
 
 # ── los 11 casos con nombre (idénticos a la v0.1, con las columnas nuevas) ──
 NOMBRADOS = [
@@ -120,6 +121,50 @@ for row in filas:
             eventos.append(dict(piloto_id=row["piloto_id"], tipo_evento="conducta_inapropiada", fecha=fecha_hace(R2.randint(5, 75)), activo=0, severidad="",
                                 subtipo=R2.choice(["ABUSIVE_LANGUAGE", "ABUSIVE_LANGUAGE", "PROSTITUTION_FRAUD"])))
 
+# Calificación del pasajero (2026-09-16): notas 1–5 en finalizados de 180 d. RNG aparte.
+# Los casos con nombre llevan un promedio a mano para que se vean los tres lados de la referencia.
+R4 = random.Random(16)
+CALIF_NOMBRADOS = {"P001": 4.96, "P003": 4.90, "P004": 4.10, "P005": 4.70, "P006": 4.35, "P009": 4.85, "P010": 4.97, "P012": 4.80}
+for row in filas:
+    fin = int(row.get("vc_n_finalizados") or row.get("n_finalizados") or 0)
+    if fin == 0:
+        continue
+    n_cal = int(fin * R4.uniform(0.45, 0.65))              # ~55 % de los finalizados traen nota (dato real)
+    if n_cal == 0:
+        continue
+    prom = CALIF_NOMBRADOS.get(row["piloto_id"]) or min(5.0, max(3.6, R4.gauss(4.80, 0.18)))
+    row["n_calificados"] = n_cal
+    row["suma_calificaciones"] = int(round(prom * n_cal))
+
+# Recaudos completos (2026-09-16): a los episodios ya definidos se les pone booking, monto y
+# fecha_saldado (= abono, salvo los casos marcados), y se agregan recaudos abonados EN EL
+# MOMENTO, que antes no se exportaban y son los que suman en recaudo_entregado.
+R5 = random.Random(9)
+for i, rc in enumerate(recaudos):
+    rc["booking_id"] = "%024x" % R5.getrandbits(96)
+    rc["monto"] = R5.choice([35000, 48000, 62000, 85000, 120000, 150000, 210000])
+    rc["fecha_saldado"] = rc["fecha_abono"]
+por_piloto = {}
+for rc in recaudos:
+    por_piloto.setdefault(rc["piloto_id"], []).append(rc)
+# P012 (recaudos tarde y uno vencido): el vencido queda sin saldar → "no pago".
+# P001 (buen comportamiento): además 6 recaudos abonados en el momento → entrega bien.
+# P010 (B2C ejemplar): 5 recaudos en el momento. P004 (negativo reciente, B2C): 1 en el momento y 2 sin saldar.
+EXTRA = {"P001": (6, 0), "P010": (5, 0), "P004": (1, 2), "P005": (3, 1)}
+for row in filas:
+    pid = row["piloto_id"]
+    if row["tipo"] not in ("B2B", "B2C"):
+        continue
+    en_momento, sin_pagar = EXTRA.get(pid, (0, 0))
+    if pid > "P100" and R5.random() < 0.5:
+        en_momento = R5.randint(1, 8); sin_pagar = 1 if R5.random() < 0.12 else 0
+    for k in range(en_momento + sin_pagar):
+        fr = datetime(2026, R5.choice([7, 8]), R5.randint(1, 28), R5.randint(7, 20), R5.randint(0, 59))
+        pagado = k < en_momento
+        fa = (fr + timedelta(seconds=R5.randint(5, 50))).strftime("%Y-%m-%d %H:%M:%S") if pagado else ""
+        recaudos.append(dict(piloto_id=pid, booking_id="%024x" % R5.getrandbits(96), fecha_recaudo=fr.strftime("%Y-%m-%d %H:%M:%S"),
+                             monto=R5.choice([35000, 48000, 62000, 85000, 120000, 150000, 210000]), fecha_abono=fa, fecha_saldado=fa))
+
 def escribir(nombre, cols, rows):
     with open(D / nombre, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
@@ -127,6 +172,6 @@ def escribir(nombre, cols, rows):
 
 escribir("pilotos.csv", COLS, filas)
 escribir("eventos.csv", ["piloto_id", "tipo_evento", "fecha", "activo", "severidad", "subtipo"], eventos)
-escribir("recaudos.csv", ["piloto_id", "fecha_recaudo", "fecha_abono"], recaudos)
+escribir("recaudos.csv", ["piloto_id", "booking_id", "fecha_recaudo", "monto", "fecha_abono", "fecha_saldado"], recaudos)
 escribir("reglas_activas.csv", ["piloto_id", "regla"], reglas)
 print(f"{len(filas)} pilotos, {len(eventos)} eventos, {len(recaudos)} recaudos, {len(reglas)} reglas")

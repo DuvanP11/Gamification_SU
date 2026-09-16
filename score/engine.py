@@ -29,7 +29,10 @@ EVENTOS = ("suspension_piloto", "suspension_pasajero", "invitacion_pibox",
 #               (cancelar como el promedio o menos = 0; más que la referencia resta).
 #   SCORE = clip( BASE + (5 − base_max)·B⁺ − base_max·B⁻ , 0, 5 )
 BASE = ("finalizados", "antiguedad")
-MIXTAS = ("sin_novedades", "recaudo_24h", "alto_valor", "cumplimiento_reservas")
+# 2026-09-16: + calificacion_pasajero (rate_to_driver 1–5 en finalizados, en los tres tipos)
+#              + recaudo_entregado (todo recaudo contra entrega: bien / con novedad / no pagó)
+MIXTAS = ("sin_novedades", "recaudo_24h", "recaudo_entregado", "alto_valor", "cumplimiento_reservas",
+          "calificacion_pasajero")
 NEGATIVAS = EVENTOS + ("activacion_express", "cancelacion_piloto")
 # compatibilidad con código que agrupa por "positivas / penalizaciones"
 POSITIVAS = BASE
@@ -118,9 +121,26 @@ class Evento:
 
 @dataclass
 class Recaudo:
-    """Un recaudo contra entrega que el piloto debía abonar a Picap."""
+    """Un recaudo contra entrega que el piloto debía abonar a Picap.
+    Desde 2026-09-16 la extracción trae TODOS los recaudos (antes sólo los que no
+    se abonaron en el momento): `recaudo_24h` filtra sus episodios con
+    `no_abonado_en_el_momento()`, `recaudo_entregado` los mira todos."""
     fecha_recaudo: datetime
-    fecha_abono: datetime | None = None   # None = sigue sin pagar
+    fecha_abono: datetime | None = None    # primera pata positiva del booking; None = sin abono
+    monto: float | None = None             # COP recaudados (positivo)
+    fecha_saldado: datetime | None = None  # billetera Picash del piloto de vuelta en ≥ 0; None = sigue en rojo
+    booking_id: str = ""
+
+    # Un abono dentro del primer minuto es "en el momento" (mismo criterio que
+    # tenía el WHERE de sql/03_recaudos.sql cuando sólo exportaba los tardíos).
+    def no_abonado_en_el_momento(self, tolerancia_min: float = 1.0) -> bool:
+        return self.fecha_abono is None or \
+            (self.fecha_abono - self.fecha_recaudo).total_seconds() > tolerancia_min * 60
+
+    # Para "entregado": la fecha en que dejó de deber. Con CSV viejos (sin
+    # fecha_saldado) se usa el abono del booking.
+    def fecha_cierre(self) -> datetime | None:
+        return self.fecha_saldado if self.fecha_saldado is not None else self.fecha_abono
 
 
 @dataclass
@@ -183,6 +203,11 @@ class Metricas:
     vc_n_no_atribuibles: int | None = None
     vn_n_finalizados: int | None = None        # sin novedades: últimos `ventana_dias` (365)
     vn_n_sin_novedad_a_tiempo: int | None = None
+    # Calificación del pasajero al piloto (bookings.rate_to_driver) en servicios
+    # FINALIZADOS con nota 1–5: '' (nunca calificó) y '0' (saltó la calificación)
+    # quedan fuera. Ventana propia (180 d). None = sin dato.
+    n_calificados: int | None = None
+    suma_calificaciones: float | None = None
     eventos: list[Evento] = field(default_factory=list)
     recaudos: list[Recaudo] = field(default_factory=list)   # B2B: recaudos con no pago
     documentos: Documentos | None = None
@@ -364,9 +389,10 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
     #    abonó en el momento es un "episodio"; se mide qué fracción de esos
     #    episodios cerró dentro del límite (sin contar fin de semana).
     var = "recaudo_24h"
+    episodios = [rc for rc in m.recaudos if rc.no_abonado_en_el_momento()]
     if m.tipo not in aplica[var]:
         no(var, "no_aplica")
-    elif not m.recaudos:
+    elif not episodios:
         no(var, "sin_dato")
     else:
         c = params["tasas"][var]
@@ -374,7 +400,7 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
         ahora = datetime(hoy.year, hoy.month, hoy.day, 23, 59, 59)
         a_tiempo = tarde = pendientes = vencidos = 0
         horas_list = []
-        for rc in m.recaudos:
+        for rc in episodios:
             fin = rc.fecha_abono or ahora
             h = horas_habiles(rc.fecha_recaudo, fin) if fds else max(0.0, (fin - rc.fecha_recaudo).total_seconds() / 3600)
             if rc.fecha_abono is None:
@@ -393,10 +419,76 @@ def sub_scores(m: Metricas, params: dict, hoy: date) -> dict[str, dict]:
             adj = tasa_ajustada(a_tiempo, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
             out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
                         "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
-                        "detalle": {"episodios": len(m.recaudos), "referencia_p0": _c(c, "p0", m.tipo), "a_tiempo": a_tiempo, "tarde": tarde,
+                        "detalle": {"episodios": len(episodios), "referencia_p0": _c(c, "p0", m.tipo), "a_tiempo": a_tiempo, "tarde": tarde,
                                     "vencidos_sin_pagar": vencidos, "pendientes_en_plazo": pendientes - vencidos,
                                     "n": n, "limite_horas": lim, "tasa_cruda": round(a_tiempo / n, 4),
                                     "tasa_ajustada": round(adj, 4), "horas_por_episodio": horas_list}}
+
+    # 6b) Recaudo entregado (B2B / B2C). A diferencia de recaudo_24h, acá entra
+    #     TODO recaudo contra entrega que el piloto tuvo que entregar, incluidos
+    #     los que abonó en el momento: entregarlo bien SUMA, entregarlo con
+    #     novedad (tarde) o no entregarlo RESTA. "Entregado" = la billetera Picash
+    #     del piloto volvió a ≥ 0 después del cobro (fecha_saldado; con CSV viejos,
+    #     el abono del booking). Un no pago cuenta como `peso_no_pago` novedades.
+    var = "recaudo_entregado"
+    if m.tipo not in aplica.get(var, []):
+        no(var, "no_aplica")
+    elif not m.recaudos:
+        no(var, "sin_dato")
+    else:
+        c = params["tasas"][var]
+        lim = float(_c(c, "plazo_horas_habiles", m.tipo)); fds = bool(c.get("excluir_fin_de_semana", True))
+        w_np = float(c.get("peso_no_pago", 1))
+        ahora = datetime(hoy.year, hoy.month, hoy.day, 23, 59, 59)
+        bien = novedad = no_pago = en_plazo = 0
+        monto_total = monto_no_pagado = 0.0
+        for rc in m.recaudos:
+            cierre = rc.fecha_cierre()
+            fin = cierre or ahora
+            h = horas_habiles(rc.fecha_recaudo, fin) if fds else max(0.0, (fin - rc.fecha_recaudo).total_seconds() / 3600)
+            monto_total += rc.monto or 0.0
+            if cierre is None:
+                if h > lim:
+                    no_pago += 1; monto_no_pagado += rc.monto or 0.0
+                else:
+                    en_plazo += 1          # todavía puede entregarlo: no cuenta
+            elif h <= lim:
+                bien += 1
+            else:
+                novedad += 1
+        n = bien + novedad + w_np * no_pago
+        if n == 0:
+            no(var, "sin_dato")
+        else:
+            adj = tasa_ajustada(bien, n, _c(c, "p0", m.tipo), _c(c, "m", m.tipo))
+            out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                        "neutro": rampa(_c(c, "p0", m.tipo), _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                        "detalle": {"recaudos": len(m.recaudos), "bien": bien, "novedad": novedad, "no_pago": no_pago,
+                                    "en_plazo": en_plazo, "n": n, "peso_no_pago": w_np, "plazo_horas_habiles": lim,
+                                    "ventana_dias": c.get("ventana_dias"), "referencia_p0": _c(c, "p0", m.tipo),
+                                    "monto_total": round(monto_total, 2), "monto_no_pagado": round(monto_no_pagado, 2),
+                                    "tasa_cruda": round(bien / n, 4), "tasa_ajustada": round(adj, 4)}}
+
+    # 6c) Calificación del pasajero al piloto (mixta, los tres tipos). Promedio de
+    #     rate_to_driver 1–5 en servicios finalizados, suavizado hacia la
+    #     referencia poblacional p0: mejor que la referencia suma, peor resta.
+    #     Verificado 2026-09-16: '' = nunca calificó, '0' = saltó la calificación,
+    #     y hay cincos en servicios cancelados — por eso sólo finalizados con 1–5.
+    var = "calificacion_pasajero"
+    if m.tipo not in aplica.get(var, []):
+        no(var, "no_aplica")
+    elif m.n_calificados is None or m.suma_calificaciones is None or m.n_calificados <= 0:
+        no(var, "sin_dato")
+    else:
+        c = params["tasas"][var]
+        n_cal, suma = m.n_calificados, float(m.suma_calificaciones)
+        p0, mm = float(_c(c, "p0", m.tipo)), float(_c(c, "m", m.tipo))
+        prom = suma / n_cal
+        adj = (suma + mm * p0) / (n_cal + mm)      # misma idea que tasa_ajustada, sobre un promedio 1–5
+        out[var] = {"score": rampa(adj, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                    "neutro": rampa(p0, _c(c, "x_score0", m.tipo), _c(c, "x_score5", m.tipo), smax),
+                    "detalle": {"n": n_cal, "suma": suma, "ventana_dias": c.get("ventana_dias"), "referencia_p0": p0,
+                                "promedio_crudo": round(prom, 3), "promedio_ajustado": round(adj, 3)}}
 
     # 7) Cumplimiento de reservas (B2B)
     var = "cumplimiento_reservas"
@@ -599,6 +691,17 @@ def observaciones(m: Metricas, subs: dict, vigencia: str, n_min: int, restriccio
             obs.append(f"Recaudo vencido sin pagar ({d['vencidos_sin_pagar']})")
         if d["tarde"]:
             obs.append(f"Recaudos pagados después de {int(d['limite_horas'])} h: {d['tarde']} de {d['n']}")
+    d = (subs.get("recaudo_entregado") or {}).get("detalle")
+    if d:
+        if d["no_pago"]:
+            obs.append(f"Recaudos sin entregar: {d['no_pago']} de {d['recaudos']} (${d['monto_no_pagado']:,.0f})")
+        if d["novedad"]:
+            obs.append(f"Recaudos entregados con novedad (fuera de plazo): {d['novedad']} de {d['recaudos']}")
+        if not d["no_pago"] and not d["novedad"] and d["bien"] >= 5:
+            obs.append(f"Entregó bien sus {d['bien']} recaudos")
+    d = (subs.get("calificacion_pasajero") or {}).get("detalle")
+    if d and subs["calificacion_pasajero"]["score"] < subs["calificacion_pasajero"]["neutro"] - 1.0:
+        obs.append(f"Calificación baja de los pasajeros: {d['promedio_crudo']:.2f} en {d['n']} servicios")
     for a in alertas:
         if a.startswith("doc: "):
             obs.append(a[5:])

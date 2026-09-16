@@ -125,6 +125,39 @@ tasas:
     m: 5
     x_score0: 0.40      # ≤40 % pagados a tiempo → lo peor (−1)
     x_score5: 0.97      # ≥97 % → lo mejor (+1); p0 = 0.85 es el neutro
+  recaudo_entregado:
+    # 2026-09-16. TODO recaudo contra entrega que el piloto tuvo que entregar (90 d,
+    # ventana de sql/03_recaudos.sql), incluidos los que abonó en el momento.
+    #   bien     = la billetera Picash volvió a ≥ 0 dentro de plazo_horas_habiles
+    #   novedad  = volvió a ≥ 0, pero después del plazo
+    #   no_pago  = sigue en rojo y el plazo ya venció (cuenta como peso_no_pago novedades)
+    #   en_plazo = sigue en rojo pero dentro del plazo → no cuenta todavía
+    # tasa = bien / (bien + novedad + peso_no_pago·no_pago). Mixta: por encima de p0
+    # suma, por debajo resta. Se solapa con recaudo_24h (que sólo mira los que no se
+    # abonaron en el momento): si Operaciones prefiere una sola, bajar el peso de la otra.
+    ventana_dias: 90
+    plazo_horas_habiles: 24
+    excluir_fin_de_semana: true
+    peso_no_pago: 2
+    p0: 0.90        # CALIBRAR: fracción de recaudos entregados bien en la población
+    m: 5
+    x_score0: 0.50  # ≤50 % entregados bien → lo peor (−1)
+    x_score5: 0.95  # ≥95 % → lo mejor (+1); p0 = 0.90 es el neutro
+  calificacion_pasajero:
+    # 2026-09-16. Promedio de bookings.rate_to_driver (1–5) que los pasajeros le
+    # dieron al piloto en servicios FINALIZADOS (status 4/107/108). Fuera: '' (no
+    # calificó), '0' (saltó la calificación) y los cincos de servicios cancelados.
+    # promedio_ajustado = (Σ notas + m·p0) / (n + m); sub = rampa(promedio_ajustado).
+    # Mixta: por encima de p0 suma, por debajo resta.
+    # Manejo de tiempos: últimos 180 días (columnas n_calificados / suma_calificaciones).
+    # CALIBRAR con sql/calibracion_calificacion.sql: p0 = mediana poblacional del
+    # promedio, x_score5 = p80, x_score0 = p10. Valores de arranque: promedio de los
+    # pilotos con ≥50 notas en 365 d = 4,85 (2026-09-16, incluía cancelados).
+    ventana_dias: 180
+    p0: 4.85
+    m: 10
+    x_score0: 4.00  # promedio ≤ 4,0 → lo peor (−1)
+    x_score5: 4.95  # promedio ≥ 4,95 → lo mejor (+1); p0 = 4,85 es el neutro
   cumplimiento_reservas:
     # Manejo de tiempos: últimos 3 meses (es la ventana con la que se extraen las reservas).
     ventana_dias: 90
@@ -192,7 +225,7 @@ cupo_monto:
     - { nombre: MAXIMO,    score_min: 4.5, monto_min: 1000001, monto_max: null,    texto: "más de 1.000.000" }
   maximo_requiere:
     vigencia_definitiva: true
-    sin_penalizacion_en: [alto_valor, recaudo_24h, conducta_inapropiada]   # descuento 0 en estas
+    sin_penalizacion_en: [alto_valor, recaudo_24h, recaudo_entregado, conducta_inapropiada]   # descuento 0 en estas
     min_servicios_alto_valor_ok: 10       # evidencia: ya manejó alto valor sin novedad (si aplica al tipo)
   compuertas:
     restringido_o_bloqueado: SIN_CUPO     # estado ≠ OK → sin cupo
@@ -211,6 +244,8 @@ aplicabilidad:
   baneo_imei:            [RENT]
   conducta_inapropiada:  [B2B, RENT, B2C]
   recaudo_24h:           [B2B]
+  recaudo_entregado:     [B2B, B2C]
+  calificacion_pasajero: [B2B, RENT, B2C]
   cancelacion_piloto:    [B2B, RENT, B2C]
   finalizados:           [B2B, RENT, B2C]
   antiguedad:            [B2B, RENT, B2C]

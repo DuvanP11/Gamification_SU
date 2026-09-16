@@ -7,12 +7,15 @@
 --   activación piloto = passengers.enrollment_approval_at; registro pasajero = passengers.created_at.
 --   gamification = vw_atr_driver_scoring_with_frauds (new_final_score_pibox / _rent según tipo).
 --   sin_novedades, alto_valor y reservas quedan VACÍOS (sin fuente confirmada) → el motor los excluye.
+--   calificación del pasajero (2026-09-16): rate_to_driver 1–5 SÓLO en finalizados, 180 días.
+--     '' = nunca calificó, '0' = saltó la calificación, y hay cincos en cancelados: todo eso queda fuera.
 WITH
   ult AS (
     SELECT _id,
            argMax(toString(driver_id),  _sdc_batched_at) AS drv,
            argMax(status_cd,            _sdc_batched_at) AS st,
            argMax(toString(company_id), _sdc_batched_at) AS cia,
+           argMax(ifNull(rate_to_driver, ''), _sdc_batched_at) AS rt,
            min(created_at)                                AS creado
     FROM picapmongoprod.bookings
     WHERE created_at >= now() - INTERVAL 180 DAY
@@ -23,7 +26,7 @@ WITH
     FROM picapmongoprod.packages
     WHERE created_at >= now() - INTERVAL 187 DAY),
   tip AS (
-    SELECT u.drv AS drv, u.st AS st, u.creado >= now() - INTERVAL 90 DAY AS en90,
+    SELECT u.drv AS drv, u.st AS st, u.rt AS rt, u.creado >= now() - INTERVAL 90 DAY AS en90,
            if(p.booking_id != '', if(notEmpty(ifNull(u.cia, '')), 'B2B', 'B2C'), 'RENT') AS tipo
     FROM ult u LEFT JOIN pk p ON p.booking_id = u._id),
   agg AS (
@@ -34,7 +37,9 @@ WITH
            countIf(st = 104 AND en90)            AS n_cancel_plataforma,
            countIf(st = 100)                     AS vc_n_cancel_piloto,      -- 180 días
            countIf(st IN (4, 107, 108))          AS vc_n_finalizados,
-           countIf(st IN (102, 104))             AS vc_n_no_atribuibles
+           countIf(st IN (102, 104))             AS vc_n_no_atribuibles,
+           countIf(st IN (4, 107, 108) AND rt IN ('1','2','3','4','5'))                    AS n_calificados,       -- 180 días
+           sumIf(toInt32OrZero(rt), st IN (4, 107, 108) AND rt IN ('1','2','3','4','5'))   AS suma_calificaciones
     FROM tip GROUP BY piloto_id, tipo),
   pas AS (
     SELECT _id,
@@ -74,6 +79,7 @@ SELECT
   a.n_finalizados, a.n_cancel_piloto, a.n_cancel_pasajero, a.n_cancel_plataforma,
   0 AS n_otros_atribuibles,
   a.vc_n_cancel_piloto, a.vc_n_finalizados, 0 AS vc_n_otros_atribuibles, a.vc_n_no_atribuibles,
+  a.n_calificados, a.suma_calificaciones,
   '' AS vn_n_finalizados, '' AS vn_n_sin_novedad_a_tiempo,
   '' AS n_sin_novedad_a_tiempo, '' AS n_alto_valor, '' AS n_alto_valor_ok,
   '' AS n_res_cumplidas, '' AS n_res_incumplidas_atrib, '' AS n_res_cancel_atrib, '' AS n_res_no_atrib

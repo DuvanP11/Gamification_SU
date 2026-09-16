@@ -177,6 +177,58 @@ class Casos(unittest.TestCase):
         self.assertEqual(plazo["alertas"], [])
         self.assertEqual(ev(Metricas("R", "RENT", recaudos=[Recaudo(vie)], **base))["sub_scores"]["recaudo_24h"]["motivo"], "no_aplica")
 
+    def test_recaudo_entregado(self):
+        base = dict(dias_antiguedad=400, n_finalizados=80, n_cancel_piloto=2)
+        d = lambda r: r["sub_scores"]["recaudo_entregado"]["detalle"]
+        sin = ev(Metricas("0", "B2B", **base))
+        self.assertEqual(sin["sub_scores"]["recaudo_entregado"]["motivo"], "sin_dato")
+        lun = datetime(2026, 9, 7, 9)
+        # Abonado en el momento: recaudo_24h NO lo ve (no es episodio), entregado SÍ y suma.
+        al_toque = [Recaudo(lun, lun.replace(minute=0, second=20), monto=50000, fecha_saldado=lun) for _ in range(8)]
+        ok = ev(Metricas("A", "B2B", recaudos=al_toque, **base))
+        self.assertEqual(ok["sub_scores"]["recaudo_24h"]["motivo"], "sin_dato")
+        self.assertEqual(d(ok)["bien"], 8); self.assertEqual(d(ok)["monto_total"], 400000)
+        self.assertGreater(ok["contribuciones"]["recaudo_entregado"]["aporte"], 0)
+        # Saldado tarde = novedad (resta); fecha_saldado manda sobre fecha_abono.
+        tarde = ev(Metricas("B", "B2B", recaudos=[Recaudo(lun, lun, monto=50000, fecha_saldado=datetime(2026, 9, 9, 12))] * 8, **base))
+        self.assertEqual(d(tarde)["novedad"], 8); self.assertLess(tarde["contribuciones"]["recaudo_entregado"]["aporte"], 0)
+        # Sin saldar y vencido = no pago: pesa doble y deja observación con el monto.
+        np_ = ev(Metricas("C", "B2B", recaudos=[Recaudo(lun, monto=120000)] * 2 + al_toque[:2], **base))
+        self.assertEqual((d(np_)["no_pago"], d(np_)["bien"], d(np_)["n"]), (2, 2, 6.0))
+        self.assertEqual(d(np_)["monto_no_pagado"], 240000)
+        self.assertTrue(any(o.startswith("Recaudos sin entregar: 2") for o in np_["observaciones"]))
+        # Mismo caso pero saldado tarde en vez de no pagar: la novedad castiga menos que el no pago.
+        nov = ev(Metricas("C2", "B2B", recaudos=[Recaudo(lun, monto=120000, fecha_saldado=datetime(2026, 9, 10, 9))] * 2 + al_toque[:2], **base))
+        self.assertLess(np_["sub_scores"]["recaudo_entregado"]["score"], nov["sub_scores"]["recaudo_entregado"]["score"])
+        # Pendiente pero en plazo: no cuenta. CSV viejo (sin fecha_saldado): usa el abono.
+        plazo = ev(Metricas("D", "B2B", recaudos=[Recaudo(datetime(2026, 9, 15, 10), monto=1)], **base))
+        self.assertEqual(plazo["sub_scores"]["recaudo_entregado"]["motivo"], "sin_dato")
+        viejo = ev(Metricas("E", "B2C", recaudos=[Recaudo(lun, datetime(2026, 9, 7, 15))], **base))
+        self.assertEqual(d(viejo)["bien"], 1)
+        self.assertEqual(ev(Metricas("R", "RENT", recaudos=al_toque, **base))["sub_scores"]["recaudo_entregado"]["motivo"], "no_aplica")
+
+    def test_calificacion_pasajero(self):
+        base = dict(dias_antiguedad=400, n_finalizados=100, n_cancel_piloto=5)
+        sub = lambda r: r["sub_scores"]["calificacion_pasajero"]
+        for t in TIPOS:
+            self.assertEqual(sub(ev(Metricas("0", t, **base)))["motivo"], "sin_dato")
+            self.assertEqual(sub(ev(Metricas("0", t, n_calificados=0, suma_calificaciones=0, **base)))["motivo"], "sin_dato")
+        ref = ev(Metricas("R", "RENT", n_calificados=100, suma_calificaciones=485, **base))    # = referencia 4.85
+        mejor = ev(Metricas("M", "RENT", n_calificados=100, suma_calificaciones=500, **base))  # todo cincos
+        peor = ev(Metricas("P", "RENT", n_calificados=100, suma_calificaciones=380, **base))   # promedio 3.8
+        self.assertAlmostEqual(ref["contribuciones"]["calificacion_pasajero"]["aporte"], 0, delta=0.05)
+        self.assertGreater(mejor["contribuciones"]["calificacion_pasajero"]["aporte"], 0)
+        self.assertLess(peor["contribuciones"]["calificacion_pasajero"]["aporte"], 0)
+        self.assertGreater(mejor["score_final"], ref["score_final"]); self.assertLess(peor["score_final"], ref["score_final"])
+        self.assertEqual(sub(peor)["detalle"]["promedio_crudo"], 3.8)
+        self.assertTrue(any(o.startswith("Calificación baja") for o in peor["observaciones"]))
+        # Pocas notas no dan el máximo: 3 cincos quedan cerca de la referencia (suavizado).
+        pocas = ev(Metricas("Q", "RENT", n_calificados=3, suma_calificaciones=15, **base))
+        self.assertLess(sub(pocas)["detalle"]["promedio_ajustado"], 4.9)
+        self.assertLess(pocas["contribuciones"]["calificacion_pasajero"]["aporte"], mejor["contribuciones"]["calificacion_pasajero"]["aporte"])
+        # Rent por fin tiene una mixta: la base ya no llega sola a 5.
+        self.assertLess(ref["contribuciones"]["_bloques"]["base_max"], 5)
+
     def test_observaciones_automaticas(self):
         r = ev(Metricas("N", "RENT", n_finalizados=3, n_cancel_piloto=12, eventos=[Evento("suspension_piloto", date(2026, 9, 5))]))
         txt = " | ".join(r["observaciones"])

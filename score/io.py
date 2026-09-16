@@ -52,7 +52,9 @@ CAMPOS_INT = ["dias_antiguedad", "n_finalizados", "n_cancel_piloto", "n_cancel_p
               "n_res_cancel_atrib", "n_res_no_atrib",
               # ventanas propias (manejo de tiempos): vacío = usar los conteos base
               "vc_n_cancel_piloto", "vc_n_finalizados", "vc_n_otros_atribuibles", "vc_n_no_atribuibles",
-              "vn_n_finalizados", "vn_n_sin_novedad_a_tiempo"]
+              "vn_n_finalizados", "vn_n_sin_novedad_a_tiempo",
+              # calificación del pasajero (finalizados con nota 1–5, 180 d)
+              "n_calificados", "suma_calificaciones"]
 CAMPOS_CERO_POR_DEFECTO = {"n_finalizados", "n_cancel_piloto", "n_cancel_pasajero",
                            "n_cancel_plataforma", "n_otros_atribuibles"}
 
@@ -95,7 +97,9 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
         with open(p_rc, encoding="utf-8") as f:
             for r in csv.DictReader(f):
                 recaudos.setdefault(r["piloto_id"], []).append(
-                    Recaudo(fecha_recaudo=_dt(r["fecha_recaudo"]), fecha_abono=_dt(r.get("fecha_abono"))))
+                    Recaudo(fecha_recaudo=_dt(r["fecha_recaudo"]), fecha_abono=_dt(r.get("fecha_abono")),
+                            monto=_float(r.get("monto")), fecha_saldado=_dt(r.get("fecha_saldado")),
+                            booking_id=(r.get("booking_id") or "").strip()))
     documentos: dict[str, Documentos] = {}
     p_dc = dir_datos / "documentos.csv"
     if p_dc.exists():
