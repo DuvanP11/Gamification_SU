@@ -25,6 +25,7 @@ table{border-collapse:collapse;width:100%}th,td{padding:3px 6px;border-bottom:1p
 .rk td.sc{text-align:right;font-variant-numeric:tabular-nums}.rk td.sc b{font-size:13px}.rk td.sc.nuevo b{font-size:14px}.rk td.sc > small{display:block;font-size:10px;line-height:1.1}
 .rk td.sub > small{display:block;font-size:10px;line-height:1.15}.rk td.obs{white-space:normal;min-width:220px;max-width:360px;font-size:11px;line-height:1.25}.rk td.nom > small{display:block;font-size:10.5px}
 .rk .pill{padding:1px 6px;font-size:10px}.rk .idc{font-size:10.5px}.rk .idc b{font-size:11px}
+.rk td.acc{white-space:nowrap}.rk td.acc button{display:block;width:100%;padding:3px 8px;font-size:11px;margin:2px 0;border-radius:6px;cursor:pointer}.rk td.acc button.p{background:var(--acc);color:#fff;border:0}.rk td.acc button.s{background:#eee;border:1px solid var(--border)}.rk td.acc button[disabled]{opacity:.45;cursor:not-allowed}
 th{color:var(--muted);font-weight:600;cursor:pointer}tbody tr{cursor:pointer}tbody tr:hover{background:#f0edff}tbody tr.sel{background:#e6e0ff}
 .num{text-align:right;font-variant-numeric:tabular-nums}.pill{padding:2px 7px;border-radius:6px;font-weight:700;font-size:11px;color:#fff}
 .b-EXCELENTE{background:#15803d}.b-BUENO{background:#65a30d}.b-ACEPTABLE{background:#ca8a04}.b-DEFICIENTE{background:#ea580c}.b-CRITICO{background:#dc2626}.b-EXTREMADAMENTE_CRITICO{background:#7f1d1d}.b-null{background:#9ca3af}
@@ -199,9 +200,10 @@ function filaRank(r,pos){var obs=(r.observaciones||[]).slice(); if(r.caso) obs.p
    '<td class="sc nuevo"><b>'+fmt(r.score_final)+'</b>'+(r.score_final!==r.score_comportamental?'<small>sin tope '+fmt(r.score_comportamental)+'</small>':'')+'</td>'+
    '<td class="sub"><span class="pill b-'+r.banda+'">'+(r.banda||'SIN SCORE')+'</span><small>'+r.vigencia.toLowerCase()+' · n='+r.n_aplicables+'</small></td>'+
    '<td class="sub">'+cupoCell(r.cupo)+'</td><td class="est-'+r.estado+'">'+r.estado+'</td>'+
-   '<td class="obs">'+(obs.length?obs.join('<br>'):'<small>—</small>')+'</td></tr>'}
+   '<td class="obs">'+(obs.length?obs.join('<br>'):'<small>—</small>')+'</td>'+
+   '<td class="acc"><button class="p" '+(CFG&&CFG.clickhouse?'':'disabled title="hace falta ClickHouse (CH_PASSWORD)"')+' onclick="event.stopPropagation();verHoja(\''+did+'\')">Hoja de vida</button><button class="s" onclick="event.stopPropagation();resumenScore(\''+r.piloto_id+'|'+r.tipo+'\')">Resumen Score</button></td></tr>'}
 function bloqueRank(titulo,rows,offset,color){ if(!rows.length) return '';
-  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><div class="rk"><table><thead><tr><th>#</th><th>Piloto · ID</th><th>Activación</th><th class="num" title="passengers.rating_as_driver__fl: la calificación que la app le muestra al piloto. Sólo contexto, no entra al score nuevo">Score<br>app</th><th class="num" title="vw_atr_driver_scoring_with_frauds: new_final_score_pibox / new_final_score_rent (abajo el nivel y los puntos). Sólo contexto">Score gamif.<br>anterior</th><th class="num" title="Score Operacional de Pilotos: el de esta metodología (0 – 5)">Score<br>nuevo</th><th>Banda</th><th title="Cupo de confianza: cuánto valor declarado / recaudo se le puede confiar">Cupo COP</th><th>Estado</th><th>Observaciones</th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table></div>'}
+  return '<h3 style="margin:14px 0 4px;font-size:13px;color:'+color+'">'+titulo+' <small>('+rows.length+')</small></h3><div class="rk"><table><thead><tr><th>#</th><th>Piloto · ID</th><th>Activación</th><th class="num" title="passengers.rating_as_driver__fl: la calificación que la app le muestra al piloto. Sólo contexto, no entra al score nuevo">Score<br>app</th><th class="num" title="vw_atr_driver_scoring_with_frauds: new_final_score_pibox / new_final_score_rent (abajo el nivel y los puntos). Sólo contexto">Score gamif.<br>anterior</th><th class="num" title="Score Operacional de Pilotos: el de esta metodología (0 – 5)">Score<br>nuevo</th><th>Banda</th><th title="Cupo de confianza: cuánto valor declarado / recaudo se le puede confiar">Cupo COP</th><th>Estado</th><th>Observaciones</th><th></th></tr></thead><tbody>'+rows.map(function(r,i){return filaRank(r,offset+i+1)}).join('')+'</tbody></table></div>'}
 function renderTabla(){
   if(!RANK) return; var t=$('tipo').value, tipos=t?[t]:['B2B','RENT','B2C'], h='', info=[];
   tipos.forEach(function(tp){var k=RANK[tp]; if(!k) return;
@@ -281,13 +283,14 @@ function filaHTML(v,s,c,r){
   return '<div class="fila"><div class="nom">'+NOMBRES[v][0]+'<small>'+v+'</small></div><div class="que">'+e.que+'<br><small>'+e.como+'</small></div>'+
     '<div><div class="barra"><i style="width:'+(sub/5*100)+'%;background:'+colorSub(sub)+'"></i></div><div class="pts"><b>'+sub.toFixed(2)+'</b> de 5 puntos</div></div>'+ef+'</div>';
 }
-async function renderDetalle(k){
+async function renderDetalle(k,destino){
+  var pintar=function(html){if(destino){destino.innerHTML=html}else{$('detalle').innerHTML=html}};
   var partes=k.split('|'), body={pesos:PESOS,parametros_yaml:paramsConAlpha(),hoy:$('hoy').value,datos:$('fuente').value,piloto_id:partes[0],tipo:partes[1]};
   var d=await api('/api/detalle',body);
-  if(!d.ok){$('detalle').innerHTML='<h2>Desglose</h2><div class="alerta">'+d.error+'</div>';return}
+  if(!d.ok){pintar('<h2>Desglose</h2><div class="alerta">'+d.error+'</div>');return}
   var r=d.detalle; PARAMS=d.parametros; var b=r.contribuciones._bloques;
   var h='<h2>Desglose · '+r.piloto_id+' '+r.nombre+' · '+r.tipo+'</h2>';
-  if(!b){$('detalle').innerHTML=h+'<div class="alerta">Sin score: no tiene servicios en la ventana sobre los que evaluar el desempeño.</div>';return}
+  if(!b){pintar(h+'<div class="alerta">Sin score: no tiene servicios en la ventana sobre los que evaluar el desempeño.</div>');return}
   var sc=Math.max(0,Math.min(5,b.nota?0:b.score_sin_clip));
   h+='<div class="resumen"><div class="paso"><div class="k">1 · Base ganada</div><div class="v">'+b.A_base.toFixed(2)+' <small>/ '+b.base_max.toFixed(1)+'</small></div><div class="t">'+(b.nota?'piloto nuevo sin servicios: arranca en 0':'experiencia y antigüedad como piloto')+'</div></div><div class="flecha">+</div>'+
      '<div class="paso"><div class="k">2 · Mejor que la referencia</div><div class="v">+'+(b.ganancia||0).toFixed(2)+'</div><div class="t">'+(b.confianza<1?'ganado al '+Math.round(b.confianza*100)+' % (poca evidencia)':'lo que hace mejor que el promedio')+'</div></div><div class="flecha">−</div>'+
@@ -320,7 +323,7 @@ async function renderDetalle(k){
   h+='</div>';
   if(noap.length) h+='<div class="nota">No aplican en '+r.tipo+' (fuera del cálculo, no cuentan como 0): '+noap.join(', ')+'.</div>';
   if(sind.length) h+='<div class="nota">Sin dato para evaluar (fuera del cálculo): '+sind.join(', ')+'.</div>';
-  $('detalle').innerHTML=h;
+  pintar(h);
 }
 $('tipo').onchange=function(){renderPesos();renderTabla()}; $('hoy').onchange=recalc; $('soloDef').onchange=recalc; $('fuente').onchange=function(){try{localStorage.setItem('fuente',$('fuente').value)}catch(e){} SEL=null; $('detalle').innerHTML='<h2>Desglose</h2><small>Clic en un piloto.</small>'; recalc()}; $('recalc').onclick=recalc;
 $('guardarParams').onclick=async function(){var d=await api('/api/guardar',{parametros_yaml:paramsConAlpha()});$('msg').textContent=d.ok?'✓ parametros.yaml guardado':d.error;if(d.ok)$('params').value=paramsConAlpha()};
@@ -348,8 +351,11 @@ async function buscar(){
       f.scores.map(function(s){return '<button class="s" onclick="resumenScore(\''+s.piloto_id+'|'+s.tipo+'\')">Resumen Score'+(f.scores.length>1?' '+s.tipo:'')+'</button>'}).join('')+'</div></div>'}).join('');
 }
 function esc(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function resumenScore(k){SEL=k; renderDetalle(k).then(function(){$('detalle').scrollIntoView({behavior:'smooth',block:'start'})});
-  Array.prototype.forEach.call(document.querySelectorAll('tr[data-k]'),function(tr){tr.classList.toggle('sel',tr.dataset.k===k)})}
+function resumenScore(k){
+  var ov=$('rsOv'); if(!ov){ov=document.createElement('div');ov.id='rsOv';ov.className='ov';ov.onclick=function(e){if(e.target===ov)ov.remove()};document.body.appendChild(ov)}
+  ov.innerHTML='<div class="hv"><div class="cab"><h3>Resumen Score <small>· '+esc(k.replace('|',' · '))+'</small></h3><button onclick="$(\'rsOv\').remove()">Cerrar</button></div><div class="cu" id="rsCu">Calculando…</div></div>';
+  renderDetalle(k,$('rsCu'));
+}
 
 // ── Hoja de vida (ventana emergente, misma ficha que Consulta de Datos del portal) ──
 async function verHoja(id,desde,hasta){
