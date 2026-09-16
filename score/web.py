@@ -81,11 +81,11 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
             self.end_headers(); self.wfile.write(b); return
         ruta = self.path
-        if ruta.startswith("/static/") and ruta.endswith(".png") and "/" not in ruta[8:]:
+        if ruta.startswith("/static/") and ruta.endswith((".png", ".ico")) and "/" not in ruta[8:]:
             f = RAIZ / "static" / ruta[8:]
             if f.exists():
                 b = f.read_bytes(); self.send_response(200)
-                self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(b)))
+                self.send_header("Content-Type", "image/png" if ruta.endswith(".png") else "image/x-icon"); self.send_header("Content-Length", str(len(b)))
                 self.send_header("Cache-Control", "max-age=86400"); self.end_headers(); self.wfile.write(b); return
         if self.path == "/api/config":
             p, w, r = cargar_config()
