@@ -1,0 +1,9 @@
+data_real/
+tests/
+docs/
+sql/
+__pycache__/
+*.pyc
+.DS_Store
+arrancar.sh
+refrescar_datos.sh

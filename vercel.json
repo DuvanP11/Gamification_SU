@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/api/:ruta*", "destination": "/api/index?ruta=:ruta*" }
+  ],
+  "functions": {
+    "api/index.py": { "maxDuration": 60, "memory": 1024 }
+  }
+}

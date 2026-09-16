@@ -18,8 +18,9 @@ config/reglas.yaml       reglas existentes → bloqueo / tope / alerta (nunca pu
 score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
 score/cli.py             python3 -m score …
-score/web.py + web.html  afinador local "Gamification Picap + Pibox" (ranking, desglose, editor de parámetros; pesos fijos)
-score/static/            portada "gamification picap + pibox" (tinta blanca, fondo transparente) de la barra del afinador
+score/web.py             servidor del afinador "Gamification Picap + Pibox" (ranking, desglose, editor de parámetros; pesos fijos)
+index.html + static/     la página y la portada (tinta blanca, fondo transparente); en Vercel se sirven como estáticos
+api/index.py             entrada para Vercel: expone el mismo handler como función serverless (ver "Publicar en Vercel")
 data/*.csv               12 casos con nombre + 120 pilotos ficticios (data/generar_datos_ficticios.py)
 tests/test_engine.py     22 pruebas (rango 0–5, casos especiales, horas hábiles, no doble conteo…)
 sql/extraccion_clickhouse.sql  esqueleto para alimentar data/ desde picapmongoprod (sin verificar)
@@ -68,6 +69,23 @@ python3 -m unittest discover -s tests
 pasan como argumentos. Escribir el comando solo.
 
 Requiere Python 3 con `PyYAML` (ya instalados en este Mac). Sin otras dependencias.
+
+## Publicar en Vercel (web en producción)
+
+El repo es `github.com/DuvanP11/Gamification_SU`. Vercel lo despliega solo con importarlo
+(Add New → Project → ese repo; no hay que configurar nada: `vercel.json` ya trae el rewrite
+de `/api/*` a la función Python y `requirements.txt` instala PyYAML). Cada push a `main`
+publica una versión nueva.
+
+- `index.html` y `static/` se sirven como archivos estáticos; `/api/config`, `/api/score` y
+  `/api/detalle` corren en `api/index.py` (el mismo `score.web.H` del afinador local).
+- **Datos:** en producción sólo están los ficticios de `data/`. `data_real/*.csv` tiene
+  nombres e IDs reales de pilotos y está en `.gitignore`: **no se sube al repo público ni a
+  Vercel**. Para publicar con datos reales hacen falta dos cosas que no se pueden decidir
+  desde el código: un repo/deploy privado con acceso controlado (Vercel Authentication o
+  contraseña) y una forma de subir los CSV sin pasar por git (p. ej. Vercel Blob privado).
+- `/api/guardar` responde error en producción (el disco es de sólo lectura): los
+  parámetros se cambian en `config/parametros.yaml` con commit y se despliegan.
 
 ## Cómo se agregan cosas
 

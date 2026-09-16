@@ -1,9 +1,10 @@
-# score/web.py — afinador local: python3 -m score.web  → http://127.0.0.1:8765
-# Sin dependencias: http.server + una página con sliders. Recalcula con los
-# pesos/parámetros que se editan en pantalla (sin tocar disco) y permite
-# guardar pesos.yaml / parametros.yaml cuando el ajuste convence.
+# score/web.py — afinador: python3 -m score.web  → http://127.0.0.1:8765
+# Sin dependencias: http.server + index.html. Recalcula con los parámetros que se
+# editan en pantalla (sin tocar disco); los pesos son definitivos (config/pesos.yaml).
+# El mismo handler `H` corre en Vercel como función serverless (api/index.py): ahí
+# index.html y static/ los sirve Vercel como estáticos y sólo /api/* llega acá.
 from __future__ import annotations
-import json, sys, webbrowser
+import json, os, sys, webbrowser
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,7 +13,8 @@ from .engine import evaluar, validar_pesos, TIPOS, EVENTOS
 from .io import cargar_config, cargar_datos, fuentes_de_datos, RAIZ
 
 PUERTO = 8765
-HTML = (Path(__file__).parent / "web.html").read_text(encoding="utf-8")
+HTML = (RAIZ / "index.html").read_text(encoding="utf-8")
+EN_VERCEL = bool(os.environ.get("VERCEL"))
 _CACHE: dict = {}   # fuente → (firma mtimes, datos)
 
 CAMPOS_FILA = ("piloto_id", "nombre", "caso", "tipo", "driver_id", "passenger_id", "activado_piloto",
@@ -62,14 +64,25 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
 
+    # En Vercel el rewrite manda /api/<x> a /api/index?ruta=<x>: si llega así, se
+    # reconstruye la ruta original. En local (y si Vercel conserva el path) no cambia nada.
+    def ruta(self) -> str:
+        p, _, q = self.path.partition("?")
+        if p.rstrip("/") in ("/api/index", "/api") and "ruta=" in q:
+            from urllib.parse import parse_qs
+            r = parse_qs(q).get("ruta", [""])[0]
+            return "/api/" + r if r else "/api"
+        return p
+
     def do_GET(self):
+        self.path = self.ruta()
         if self.path == "/":
             b = HTML.encode(); self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
             self.end_headers(); self.wfile.write(b); return
-        ruta = self.path.split("?", 1)[0]
+        ruta = self.path
         if ruta.startswith("/static/") and ruta.endswith(".png") and "/" not in ruta[8:]:
-            f = Path(__file__).parent / "static" / ruta[8:]
+            f = RAIZ / "static" / ruta[8:]
             if f.exists():
                 b = f.read_bytes(); self.send_response(200)
                 self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(b)))
@@ -82,6 +95,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
 
     def do_POST(self):
+        self.path = self.ruta()
         n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}")
         if self.path in ("/api/score", "/api/detalle"):
             try:
@@ -108,6 +122,8 @@ class H(BaseHTTPRequestHandler):
             return
         if self.path == "/api/guardar":
             try:
+                if EN_VERCEL:
+                    raise PermissionError("en producción no se guarda: los parámetros se cambian en el repo (config/parametros.yaml) y se despliegan")
                 if "pesos" in body:
                     raise PermissionError("los pesos son definitivos (2026-09-16); se cambian sólo a mano en config/pesos.yaml")
                 if "parametros_yaml" in body:
