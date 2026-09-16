@@ -4,7 +4,7 @@
 -- origen='historial' hace que el motor descarte el flag sin fecha de 02_eventos para el mismo piloto.
 SELECT toString(driver_id) AS piloto_id,
        'suspension_piloto' AS tipo_evento,
-       toString(toDate(ifNull(starts_at, created_at))) AS fecha,
+       toString(toDate(ifNull(starts_at, creado))) AS fecha,
        if(ifNull(permanent, false) OR ifNull(ends_at, toDateTime64('1970-01-01', 3)) > now(), 1, 0) AS activo,
        '' AS severidad,
        'historial' AS origen,
@@ -17,7 +17,9 @@ FROM (
          argMax(driver_id,     _sdc_batched_at) AS driver_id,
          argMax(starts_at,     _sdc_batched_at) AS starts_at,
          argMax(ends_at,       _sdc_batched_at) AS ends_at,
-         argMax(created_at,    _sdc_batched_at) AS created_at,
+         -- alias distinto de la columna: con `AS created_at`, el `created_at <= now()` del
+         -- WHERE de abajo se resolvía al agregado (ILLEGAL_AGGREGATION, 2026-09-16).
+         argMax(created_at,    _sdc_batched_at) AS creado,
          argMax(permanent,     _sdc_batched_at) AS permanent,
          argMax(rule_id,       _sdc_batched_at) AS rule_id,
          argMax(penalizations, _sdc_batched_at) AS penalizations,
