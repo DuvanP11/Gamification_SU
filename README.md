@@ -19,7 +19,7 @@ score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
 score/cli.py             python3 -m score …
 score/web.py + web.html  afinador local "Gamification Picap + Pibox" (ranking, desglose, editor de parámetros; pesos fijos)
-score/static/            logos de Picap y Pibox que usa la barra del afinador
+score/static/            portada "gamification picap + pibox" (tinta blanca, fondo transparente) de la barra del afinador
 data/*.csv               12 casos con nombre + 120 pilotos ficticios (data/generar_datos_ficticios.py)
 tests/test_engine.py     22 pruebas (rango 0–5, casos especiales, horas hábiles, no doble conteo…)
 sql/extraccion_clickhouse.sql  esqueleto para alimentar data/ desde picapmongoprod (sin verificar)
