@@ -132,6 +132,7 @@ def cargar_datos(dir_datos: Path) -> list[Metricas]:
                   "driver_id": (r.get("driver_id") or "").strip(), "passenger_id": (r.get("passenger_id") or "").strip(),
                   "activado_piloto": _fecha_opc(r.get("activado_piloto")),
                   "activado_pasajero": _fecha_opc(r.get("activado_pasajero")),
+                  "ultimo_servicio": _fecha_opc(r.get("ultimo_servicio")),
                   "calif_gamification": _float(r.get("calif_gamification")), "calif_app": _float(r.get("calif_app")),
                   "gamif_puntos": _float(r.get("gamif_puntos")), "gamif_final": _float(r.get("gamif_final")),
                   "activacion_express": _int(r.get("activacion_express"))}

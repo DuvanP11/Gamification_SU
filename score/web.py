@@ -24,7 +24,7 @@ _CACHE: dict = {}   # clave de fuente → (firma mtimes, datos)
 _LOG_EXTRACCION: list[str] = []
 
 CAMPOS_FILA = ("piloto_id", "nombre", "caso", "tipo", "driver_id", "passenger_id", "activado_piloto",
-               "activado_pasajero", "calif_gamification", "gamif_puntos", "gamif_final", "calif_app",
+               "activado_pasajero", "ultimo_servicio", "calif_gamification", "gamif_puntos", "gamif_final", "calif_app",
                "score_comportamental", "score_final", "banda", "vigencia", "confianza", "n_aplicables",
                "n_min", "estado", "restricciones_activas", "tope_por_regla", "alertas", "observaciones", "documentos", "cupo")
 

@@ -208,6 +208,7 @@ class Metricas:
     # quedan fuera. Ventana propia (180 d). None = sin dato.
     n_calificados: int | None = None
     suma_calificaciones: float | None = None
+    ultimo_servicio: date | None = None       # último booking como piloto (cualquier estado) en 180 d
     eventos: list[Evento] = field(default_factory=list)
     recaudos: list[Recaudo] = field(default_factory=list)   # B2B: recaudos con no pago
     documentos: Documentos | None = None
@@ -880,6 +881,7 @@ def evaluar(m: Metricas, params: dict, pesos: dict, reglas: dict, hoy: date | No
         "driver_id": m.driver_id, "passenger_id": m.passenger_id,
         "activado_piloto": m.activado_piloto.isoformat() if m.activado_piloto else None,
         "activado_pasajero": m.activado_pasajero.isoformat() if m.activado_pasajero else None,
+        "ultimo_servicio": m.ultimo_servicio.isoformat() if m.ultimo_servicio else None,
         "calif_gamification": m.calif_gamification, "gamif_puntos": m.gamif_puntos, "gamif_final": m.gamif_final,
         "calif_app": m.calif_app,
         "caso": m.caso, "observaciones": obs,

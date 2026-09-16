@@ -26,7 +26,7 @@ WITH
     FROM picapmongoprod.packages
     WHERE created_at >= now() - INTERVAL 187 DAY AND created_at <= now()),
   tip AS (
-    SELECT u.drv AS drv, u.st AS st, u.rt AS rt, u.creado >= now() - INTERVAL 90 DAY AS en90,
+    SELECT u.drv AS drv, u.st AS st, u.rt AS rt, u.creado AS creado, u.creado >= now() - INTERVAL 90 DAY AS en90,
            if(p.booking_id != '', if(notEmpty(ifNull(u.cia, '')), 'B2B', 'B2C'), 'RENT') AS tipo
     FROM ult u LEFT JOIN pk p ON p.booking_id = u._id),
   agg AS (
@@ -39,7 +39,8 @@ WITH
            countIf(st IN (4, 107, 108))          AS vc_n_finalizados,
            countIf(st IN (102, 104))             AS vc_n_no_atribuibles,
            countIf(st IN (4, 107, 108) AND rt IN ('1','2','3','4','5'))                    AS n_calificados,       -- 180 días
-           sumIf(toInt32OrZero(rt), st IN (4, 107, 108) AND rt IN ('1','2','3','4','5'))   AS suma_calificaciones
+           sumIf(toInt32OrZero(rt), st IN (4, 107, 108) AND rt IN ('1','2','3','4','5'))   AS suma_calificaciones,
+           toString(toDate(toTimeZone(max(creado), 'America/Bogota')))                        AS ultimo_servicio       -- último booking (cualquier estado) en 180 d
     FROM tip GROUP BY piloto_id, tipo),
   pas AS (
     SELECT _id,
@@ -79,7 +80,7 @@ SELECT
   a.n_finalizados, a.n_cancel_piloto, a.n_cancel_pasajero, a.n_cancel_plataforma,
   0 AS n_otros_atribuibles,
   a.vc_n_cancel_piloto, a.vc_n_finalizados, 0 AS vc_n_otros_atribuibles, a.vc_n_no_atribuibles,
-  a.n_calificados, a.suma_calificaciones,
+  a.n_calificados, a.suma_calificaciones, a.ultimo_servicio,
   '' AS vn_n_finalizados, '' AS vn_n_sin_novedad_a_tiempo,
   '' AS n_sin_novedad_a_tiempo, '' AS n_alto_valor, '' AS n_alto_valor_ok,
   '' AS n_res_cumplidas, '' AS n_res_incumplidas_atrib, '' AS n_res_cancel_atrib, '' AS n_res_no_atrib
