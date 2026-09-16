@@ -67,6 +67,12 @@ class H(BaseHTTPRequestHandler):
             b = HTML.encode(); self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(b)))
             self.end_headers(); self.wfile.write(b); return
+        if self.path.startswith("/static/") and self.path.endswith(".png") and "/" not in self.path[8:]:
+            f = Path(__file__).parent / "static" / self.path[8:]
+            if f.exists():
+                b = f.read_bytes(); self.send_response(200)
+                self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(b)))
+                self.send_header("Cache-Control", "max-age=86400"); self.end_headers(); self.wfile.write(b); return
         if self.path == "/api/config":
             p, w, r = cargar_config()
             self._json({"parametros": p, "pesos": w, "reglas": r,
