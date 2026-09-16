@@ -79,7 +79,9 @@ class H(BaseHTTPRequestHandler):
         if self.path in ("/api/score", "/api/detalle"):
             try:
                 params = yaml.safe_load(body["parametros_yaml"]) if body.get("parametros_yaml") else cargar_config()[0]
-                pesos, reglas = body["pesos"], cargar_config()[2]
+                # Pesos DEFINITIVOS (2026-09-16): se leen siempre de config/pesos.yaml; lo que
+                # mande el navegador se ignora, para que nadie los mueva desde el afinador.
+                _, pesos, reglas = cargar_config()
                 hoy = datetime.strptime(body.get("hoy") or date.today().isoformat(), "%Y-%m-%d").date()
                 fuente = body.get("datos") or "data"
                 if fuente not in fuentes_de_datos():
@@ -100,9 +102,7 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/guardar":
             try:
                 if "pesos" in body:
-                    (RAIZ / "config/pesos.yaml").write_text(
-                        "# Guardado desde el afinador local (" + datetime.now().isoformat(timespec='seconds') + ")\n"
-                        + yaml.safe_dump(body["pesos"], sort_keys=False, allow_unicode=True), encoding="utf-8")
+                    raise PermissionError("los pesos son definitivos (2026-09-16); se cambian sólo a mano en config/pesos.yaml")
                 if "parametros_yaml" in body:
                     yaml.safe_load(body["parametros_yaml"])  # valida antes de escribir
                     (RAIZ / "config/parametros.yaml").write_text(body["parametros_yaml"], encoding="utf-8")

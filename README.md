@@ -13,12 +13,12 @@ La metodología completa (fórmulas, tratamiento de casos, ejemplos, riesgos) es
 
 ```
 config/parametros.yaml   cómo se mide cada variable (semividas, topes, p0, m, rampas, n_min, bandas, α)
-config/pesos.yaml        pesos por tipo — DEFINITIVOS (2026-09-16), independientes de la metodología
+config/pesos.yaml        pesos por tipo — DEFINITIVOS (2026-09-16): el afinador los muestra pero no los edita
 config/reglas.yaml       reglas existentes → bloqueo / tope / alerta (nunca puntos)
 score/engine.py          motor: primitivas + sub-scores + agregación + reglas
 score/io.py              carga de CSV/YAML
 score/cli.py             python3 -m score …
-score/web.py + web.html  afinador local (sliders de pesos, editor de parámetros, desglose)
+score/web.py + web.html  afinador local (ranking, desglose, editor de parámetros; los pesos se muestran fijos)
 data/*.csv               12 casos con nombre + 120 pilotos ficticios (data/generar_datos_ficticios.py)
 tests/test_engine.py     22 pruebas (rango 0–5, casos especiales, horas hábiles, no doble conteo…)
 sql/extraccion_clickhouse.sql  esqueleto para alimentar data/ desde picapmongoprod (sin verificar)

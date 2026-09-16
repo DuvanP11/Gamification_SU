@@ -482,8 +482,10 @@ umbral de alto valor) están en `config/parametros.yaml`, comentados uno a uno.
 
 ## 11. Pesos definitivos (separados de la metodología)
 
-Fijados por el usuario en el afinador el **2026-09-16** (`config/pesos.yaml`). Son
-proporciones dentro de cada bloque: lo que manda es el porcentaje, no el número.
+Fijados por el usuario en el afinador el **2026-09-16** (`config/pesos.yaml`). Desde ese
+momento el afinador los muestra como barras fijas y el servidor ignora cualquier peso que
+le manden (y rechaza guardarlos): cambiarlos es una edición a mano del YAML, con commit.
+Son proporciones dentro de cada bloque: lo que manda es el porcentaje, no el número.
 
 | Bloque | Variable | B2B | RENT | B2C | Lectura |
 |---|---|---:|---:|---:|---|
